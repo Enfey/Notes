@@ -1,0 +1,14 @@
+.DS_Store
+Thumbs.db
+desktop.ini
+
+.obsidian/workspace.json
+
+# Obsidian plugin cache and temporary data
+.obsidian/plugins/obsidian-git/data.json
+.obsidian/plugins/obsidian-git/last-run.json
+.obsidian/plugins/obsidian-git/logs/
+.obsidian/plugins/obsidian-git/*.log
+
+.obsidian/appearance.json
+.obsidian/workspace.json
