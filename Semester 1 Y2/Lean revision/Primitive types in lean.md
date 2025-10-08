@@ -1,0 +1,22 @@
+- ==Conjunction==
+- ==Disjunction==
+- ==Implication==
+- ==False==
+- ==True==
+- ==For all==
+- ==There exists==
+- ==Equality==
+- ==Prop==
+- ==nat== 
+- ==bool==
+
+Higher level types defined in terms of primitives:
+- ==At most one==
+	- ∀ x y : α, P x → P y → x = y
+	- ==ADD EXISTS HERE TO ENSURE UNIQUENESS==
+- ==Not equal==
+	- (a b : α) : Prop := ¬(a = b)
+- ==Negation==
+	- P->False, defined in terms of implication
+- If and only if
+	- ==(P → Q) ∧ (Q → P)==, defined in terms of conjunction
