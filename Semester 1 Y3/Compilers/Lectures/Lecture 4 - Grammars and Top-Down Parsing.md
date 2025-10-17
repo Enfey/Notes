@@ -156,26 +156,6 @@ $A \to \alpha \ A'$
 $A' \to \beta_1 \ | \ \beta_2$
 Allows a predictive parsers (those which compute set of terminal symbols that can starts strings derived from each alternative, the **first set**, if there is a choice between two or more alternatives, insist the first sets are disjoint (a grammar restriction just implemented)) to consume $\alpha$ and then decide between $\beta_1, \beta_2$ using subsequent tokens, making such a choice deterministic with limited lookahead window.
 
-
-#### First and Follow
-Develop the notion of first and follow sets. For a **CFG** $G$ = $(N, T, P, S)$:$$
-
-\begin{array}{rll}
-
-first(\alpha) & = & \{ a \in T\mid\alpha \Rightarrow_{G}^*a\beta \} \\
-
-follow(A) & = & \{ a \in T \mid S \Rightarrow_{G}^*\alpha Aa\beta \}
-
- \cup \{ $ \ |S \Rightarrow_{G}^*\alpha A \}
-
-\end{array}
-
-$$
-where $\alpha,\ \beta \in(N\cup T)^*,\ A \in N$, and where $\$$ is a special "***end of input***" marker.
-
-**Follow set:** Follow set of some nonterminal $A$ consists of all terminals $a$ that can appear immediately after $A$ in some derivation from the start symbol. The End of input marker $\$ \in follow(A)$ if there exists a derivation where $A$ appears at the end of a string derived from $S$.
-
-
 ### Backtrack-free parsing
 Major source of ineffeciency in leftmost TD parsing arises from need for backtracking. If expand lower fringe with wrong production, encounters mismatch when reach AST leaves, which correspond to words returned by scanner. The act of expanding, retracting, re-expacting fringe of AST wastes time and effort.
 
