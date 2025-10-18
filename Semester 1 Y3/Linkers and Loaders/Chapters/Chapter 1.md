@@ -116,4 +116,47 @@ Compiler drivers are often much cleverer than this. They often compare the creat
 ### Linker command languages
 Every linker has some sort of command language that can be used to control the linking process. At the very least, need list of object files and libraries to link. Generally long list of possible options: whether to keep debugging symbols, whether to use shared or static libraries, which of several output formats to use. 
 
-Most linkers permit some way to specify the address
+Most linkers permit some way to specify the address at which the linked code is to be bound; useful when using a linker to link a system kernel or other programs that don't pass control to the operating system. In linkers that support multiple code and data segments, a linker command language can specify the ordering in which segments are linked etc.
+
+4 Common techniques to pass commands to a linker.
+
+- *Command line* - Pass mixture of file names and flags - or pass file with directives for linker.
+- *Intermixed with object files* - IBM mainframe linkers accepted alternating object files and linker commands in a single input file. 
+- *Embedded in object files* - some object formats, notably Microsoft's, permit linker commands to be embedded inside object files, permitting compiler to pass any options needed to link an object file inside the file itself. E.g., C compiler passes commands to search the C standard library.
+- *Separate configuration/DSL* - some linkers have full fledged configuration language to control linker, the GNU linker which can handle range of object file formats, architectures, and address space conventions, has a complex control language allowing specification of segment linking order and combination order and segment addresses, defining overlays etc.
+
+### Linking example
+2 C source files, `m.c` and `a.c`.
+
+`m.c`
+```c
+extern void a(char *)
+
+int main (int ac, char** av){
+	static char string[] = "Hello, world!\n";
+	
+	a(string);
+}
+```
+
+`a.c`
+```c
+#include <unistd.h>
+#include <string.h>
+
+void a(char *s){
+	write(1, s, strlen(s))
+}
+```
+
+Apparently, according to author, m.c compiles via GCC into 165 byte object file in classic a.out object format. Includes fixed length header, 16 bytes of `.text` segment containing read only program code, 16 bytes of `data` segment containing the string. Following that are two relocation entries, one that marks the pushl instruction that puts the address of the string on the stack in preparation for the call to `a`, and one that marks the call instruction that transfers control to `a`. The symbol table exports the definition of `_main`, imports `_a` and contains some symbols for the debugger. Each global symbol is prefixed with an underscore purposely. 
+
+![[Pasted image 20251018032012.png]]
+
+A.c compiles into 160 byte obj file, 28 byte text segment, no data. Two relocation entries mark the calls to `strlen` and `write`. Symbol table exports `_a` and imports `_strlen` and `_write`.
+
+To produce a binary executable, linker must combine these two object files with a startup init routine for C programs, and the necessary routines from the C library, creating the following executable:
+
+![[Pasted image 20251018032913.png]]
+Linker combined corresponding segments from each input file. One combined text segment, one combined data segment, one bss segment(not that either file used these). Each segment is padded out to a 4k boundary
+
