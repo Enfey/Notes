@@ -1,1 +1,0 @@
-Address bus + memory interface signals, addressing modes, instruction set(s) and respective shortcomings with regard to linkers, ABI, address formation, alignment + natural boundaries, register based addressing and relocation 
