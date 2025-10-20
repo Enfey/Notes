@@ -141,20 +141,218 @@ Instructions can directly address the lowest 4096 locations in memory by specify
 
 ![[Pasted image 20251019043102.png]]
 
-The original 360 had 24-bit addressing, with an address in memory or a register being stored in the low 24 bits of a 32 bit word and the high 8 bits discarded.  The 370 extended addressing to 31 bits. Unfortunately many programs including OS/360, the most popular OS stored flags or other data in the high byte of 32 bit address words in memory, wasn't possible to extend the addressing to 32 bits in the obvious way and still support existing object code. Instead, system has 24-bit and 31-bit modes, anytime CPU interprets 24 bit addresses or 31-bit addresses, a convention enforced by a combination of hardware and software states than an address word with the high bit set contains a 31 bit address and vice versa. As a result, linkers have to be able to handle both these addressing schemes, as programs can and do switch modes depending on how long ago a particular routine was written. 
+The original 360 had 24-bit addressing, with an address in memory or a register being stored in the low 24 bits of a 32 bit word and the high 8 bits discarded.  
+
+The 370 extended addressing to 31 bits. Unfortunately many programs including OS/360, the most popular OS stored flags or other data in the high byte of 32 bit address words in memory, wasn't possible to extend the addressing to 32 bits in the obvious way and still support existing object code. Instead, system has 24-bit and 31-bit modes, anytime CPU interprets 24 bit addresses or 31-bit addresses, a convention enforced by a combination of hardware and software states than an address word with the high bit set contains a 31 bit address and vice versa. 
+
+As a result, linkers have to be able to handle both these addressing schemes, as programs can and do switch modes depending on how long ago a particular routine was written. 
+
+Instruction addressing on the 370 is also relatively straightforward. All jumps are RR or RX.
+1. RR jumps - the second register operand contains the jump target, with register 0 representing no jump
+2. RX jumps - the memory operand is the jump target. 
+The **procedure call is branch and link**, which stores the return address in a specified register, and then jumps to the address in the second register in RR form, or to the second operand address in RX form. 
+
+For jumps within a routine, the routine must establish addressability, that is a base register points to the beginning of the routine that RX instructions can use. By convention, register 15 contains the the address of the entry point to a routine and cab be used as a base register. Since RX instructions have a 12 bit offset field, a single base register (15) covers a 4KB piece of code. If a routine is bigger than that, it has to perform more complex address formation, using multiple base registers.
+
+Alternatively, an RR branch and link with a second register of 0 stores the address of the subsequent instruction in the first operand register but doesn't jump; this can be used to set up a base register if the prior register contents are unknown. ???
 
 
-Instruction addressing on the 370 is also relatively straightforward. In the original 360, the jumps aka branch instructions are all RR or RX format. In RR jumps, the second register operand contains the jump target, with register 0 meaning don't jump. In RX jumps, the memory operand is the jump target, 
-#### ARM7TDMI
+Anyway - later IBM 390 models added relative forms of most jumps. That is, the instruction contained a signed 16 bit offset (shifted left one bit for alignment, instructions must be aligned on 2 byte boundary) and that offset is added added to the address of the instruction to get the address of the jump target. This permits jumps within +/- 64K bytes, sufficient for most intraroutine jumps. 
+	The reason for the left shift is because instructions are aligned on a 2 byte boundary, the LSB of any valid address is 0, so the is no point storing odds in the offset. Thus the offset actually represents the number of halfwords to jump, as to not waste bits. To calculate the number of bytes when it comes time to execute that addition a left shift must be performed to reach a valid address. 
 
 #### SPARC
+SPARC has 4 major instruction formats, and 31 minor instruction formats, 4 jump formats, and 2 data addressing modes. 
+SPARC versions through V8 are 32-bit architectures. SPARC V9 expands the architecture to 64 bits.
+![[Pasted image 20251019194407.png]]
+Long.
+##### SPARC V8
+In SPARC V8 there are 31 general purpose registers, numbered 1 to 31. Register 0 is a pseudo-register always containing the value 0. 
 
+An unusual register window scheme attempts to minimise the amount of register saving and restoring at procedure calls and returns. 
+
+
+###### Addressing
+Address formation: SPARC uses one of two addressing modes.
+1. Compute address by adding the values in two registers(one of these can be register 0 if one register already contains desired address).
+2. Compute address by adding a 13 bit signed offset in the instruction to a base register.
+SPARC assemblers and linkers support a psuedo-direct addressing scheme using a two instruction sequence. The two instructions are SETHI, which loads its 22-bit immediate value into the high 22 bits of a register and zeros the lower 10 bits. This is followed by OR immediate, which ORs its 13 bit immediate value into the low part of the register. The linker must handle specific relocation modes to arrange to put the high and low parts of the desired 32 bit address into the two instructions.
+
+###### Procedure call and jumps
+The procedure call instruction and most conditional jump instructions (referred to as branches in SPARC literature) use relative addressing with various size branch offsets ranging from 16 to 30 bits. Whatever the offset size, the jump shifts the offset 2 bits left (must be aligned at 4 byte word addresses). Sign extension is performed - identify the sign bit (0 for positive, 1 for negative), this sign bit is then duplicated and prepended, preserving the magnitude of the offset, whilst expanding the product of the shift to the full width of the register (32 bits for V8, 64 bits for V9). This result is added to the address of the jump or call instruction to get the target address.
+
+The call instruction uses a 30 bit offset, can reach any address in a 32 bit V8 address space. Calls store the return address in register 15.
+Various jumps use a 16, 19, or 22 bit offset, which is large enough to jump anywhere in a plausibly sized routine. 
+
+cba covering the rest of this, not really relevant. 
 #### x86
+By far most complex of the architectures covered. Features asymmetrical instruction set and segmented addresses. 
+![[Pasted image 20251019201436.png]]
+^ Generalised.
 
+There are **six** 32 bit general purpose registers named EAX, EBX, ECX, EDX, ESI and EDI.
+
+There are two 32 bit registers used primarily for addressing named EBP and ESP. 
+
+There are six specialised 16-bit segment registers, CS, DS, ES, FS, GS and SS. The low half of each of the 32 bit registers can be used as 16 bit registers, called AX, BX, CX, DX, SI, DI, BP, and SP, respectively.
+
+The low and high bytes of each of the AX through DX registers are 8 bit registers called AL, AH, BL, BH, CL, CH, DL, and DH. On the 8086, 186, and 286 chips, many instructions required their operands to be in specific registers, but on the 386 and later chips, most, but not all of the functions that required specific registers have been generalised to use any register.
+
+The ESP is the hardware stack pointer and always contains the address of the top of the stack. The EBP is usually used as a frame register that points to the base of the current stack frame (but this is not required, though it is encouraged).
+
+At any moment an x86 is running in one of three modes.
+1. Real mode - simpler operating mode for x86 which emulates the 8086.
+2. 16 bit protected mode - introduced protected mode features allowing for memory protection and such, but limited to 16 bit addressing.
+3. 32 bit protected mode - added on 386.
+Protected mode involves the x86s segmentation. 
+
+##### Address formation(data)
+Most instructions addressing data use a generalised instruction format that calculates the memory address by adding together any or all of:
+- A signed 1, 2, or 4 byte displacement value in the instruction. 
+- A base register, which can be any of the 32 bit registers
+- An optional index register, which can be any of the 32 bit registers except ESP.
+	- Index register often holds relative position or offset from base address. Very useful for indexing arrays of values.
+	- Value in index registers can be logically shifted 0, 1, 2, or 3 bits, multiplying the index value, making it easier to calculate the address of an element in an array where each element occupies 1, 2, 4, or 8 bytes. 
+Althought it is possible for a single instruction to include all of the displacement, base, and index, most just use a 32 bit displacement, which provides direct addressing. Alternatively, a displacement of 1 or 2 bytes is used in conjunction with a base register (often the EBP or ESP) to achieve stack addressing or pointer referencing.
+
+From a linker's point of view, direct addressing simplifies relocation as the instruction or data address to be modified can be embedded anywhere in the program, often on any byte boundary. Couple this with the segmentation of x86 and relocation becomes much more trivial.
+
+
+##### Procedure calls and jumps
+x86 predominantly uses relative addressing for control flow within the current address space, whilst also retaining complex segmented addressing capabilities for intersegment operations.
+
+1. Relative addressing (intra-segment control flow)
+	All conditional and uncoditional jumps and procedure calls rely heavily on relative addressing. The instruction contains a signed offset of 1, 2 or 4 bytes. This offset is added to the address of the instruction immediately following the jump or call to determine the target address. This allows jumps and calls to reach anywhere in the current 32 bit address space. No relocation required for jumps and calls that remain in same segment, as the relative position(offset) from base address of segment never changes.
+2. Address calculation for jumps and calls
+	In addition to simple relative offsets, unconditional jumps and calls can determine the target address using the more generalised addressing mechanism. Compute target address by adding displacement + base register + optional index register.
+3. Call instructions
+	Performs two actions: saving the return address and transferring control
+	Call instructions push the return address onto the stack, maintained by the extended stack pointer(ESP) register.
+4. Intersegment control flow 
+	Unconditional jumps and calls can include a **full 6 byte segment/offset address** directly within the instruction, or calculate the address where this 6 byte target address is stored. Push both the return address and the caller's segment number, to permit valid return, and facilitate intersegment calls. 
+
+
+
+
+#### ARM7TDMI
+General purpose 32 bit microprocessor to be used for our linker and loader. RISC principles. 
+
+
+##### Address Bus and Memory Interface Signals
+
+##### Alignment and Natural Boundaries
+
+##### Register based addressing and relocation. 
+
+##### ISA Foibles
+
+
+##### Debug and Hardware Foibles
 
 #### Paging and virtual memory
+**Paging** uses fixed partitioningand relocation to devise a non-contiguous memory management scheme. Paging hardware divides a program's address space into fixed size pages, and divides the physical memory of the computer into page frames of the same size ranging from 512 bytes to 1GB. 
+
+Process perceives its segments to be contiguous.
+
+We use a page table to store the mapping between virtual pages and physical frames. A logical address is relative to the start of the program, or the start of a segment. The leftmost $n$ bits represent the page number, the rightmost $n$ bits represent the offset within the page. In a 4KB block, 4 bits used for the page number (16 pages) and 12 bits used to represent the offset within the page, respecting alignment. The frame number is a function of the page number, when calculating memory address from page number, just replace it with frame number and keep offset as is. 
+
+![[Pasted image 20251019232419.png]]
+A page table entry consists of a present/abset bit of the frame is in memory, a modified bit which is set if the page/frame has been modified since in memory (only modified pages have to be committed to disk when evicted), a present/absent bit, and RWX protection bits. 
+
+The OS can load a copy of the contents page from disk into a free page frame, then let the application continue. By moving pages back and forth between main memory and disk as needed, the OS can provide virtual memory, which appears to the application to be far larger than the real memory in use. If a page fault and consequent page in or page out occurs, takes several milliseconds due to disk transfer.
+
+The more page faults a program generates, the slower it runs, the worst case being thrashing (performance problem that occurs when kernel spends majority of its time swapping pages between RAM and disk, can be prevented by good page replacement policy, paging daemon, reducing degree of multi-programming). **If a linker can pack related routines into a single page or into a small set of pages, paging performance improves**. 
+
+If pages are marked as read only, performance only improves, no need to commit back to disk when swapping out if not in use.
+
+An x86 with 32-bit addressing and 4KB pages would need a page table with 2$^{20}$ entries to map an entire address space. Because each page table entry is usually 4 bytes, this would make the page tables an impractical 4MB long.
+
+
+This provoked the advent of multi-level page tables. Organises virtual address space into hierarchical page tables. The entries of a level 1 page table are pointers to a level 2 page table and so and and so forth. The entries of the last level page table(s) store actual frame information. Only the outermost page table resides in main memory, and other tables are not brough to main memory unless required, and are stored in virtual memory. Page number is now divided into an index into the root page table, followed by subsequent indexes according to depth of page table, to reach frame mapping. Though mult-level page tables contain up to 5 levels in practice, often use TLB to optimise virtual address translation, part of MMU that exploits temporal locality (stores recent translations of virtual addresses to frame numbers and can be searched in parallel.)
+![[Pasted image 20250115222222.png]]
+
+In x86, each upper-level page table contains 1024 entries. Each lower level page table also contains 1024 entries, to map the 1024 4KB pages in the 4MB of address space corresponding to that page table. Yeah whatever!
+
+
+##### The program address space
+Set of addresses available to an application program, determined by combination of hardware and OS. Linker/Loader must create a runnable program that correctly matches this address space. 
+
+###### Historical examples
+PDP-11 UNIX. The address space was 64KB. The read only code of the program was loaded at location zero, with the read/write data following the code. The PDP had 8KB pages, so the data started on the 8KB boundary after the code. Stack grew downward, starting at 64KB, as stack and data grew, enlarged; if met, program ran out of space.
+
+DOS on x86 systems used no hardware protections, so the system and running applications share the same address space. Places programs in largest piece of free memory.
+
+Windows has unusual loading scheme. Each program is linked to load at a standard starting address, but the binary executable contains relocation information, used if the starting address is not available; relocates at load time. 
+
+
+##### Memory Mapped files
+Virtual memory systems commonly unify the paging mechanism with the file system through **mapped files**. 
+
+A memory mapped file is a segment of virtual memory that has been assigned a direct byte-for-byte correlation with some portion of a file or file-like resource (anything that can be referenced via a file descriptor).
+
+When a program maps a file to part of program address space, the OS marks all the pages in that segment as not present, and uses the the file as the paging disk(backing store) for that part of the address space. The program can read the file merely by referencing that part of the address space, at which point the paging system loads the necessary pages (chunks of the file) from disk. 
+
+There are three different approaches to handling writes to mapped files.
+
+1. Map file as read only(**RO**) - An attempts to write fail.
+2. Map file as read write(**RW**) - changes to the memory copy of the file are paged back to the disk by the time the file is unmapped, according to modified bit. 
+3. Map the file as copy on write (**COW**) - Maps each page as RO until program writes to it, at which point create a private copy of the page for that process.
+
+Facilitates IPC, efficiency and reduces need for I/O system calls if managed correctly.
+
+
+##### Shared libraries and Programs
+In nearly every system that handles multiple programs simultaneously, each program has a separate set of page tables, giving each program logically separate address space. Makes system considerably more robust, but can also cause performance programs.
+
+If a single program or library is used in one more address space, the system can save a great deal of memory if all the address spaces share a single frame copy of the program or library. This is relatively straightforward for the OS to implement - just map the executable file into each program's address space. 
+
+Unrelocated code and read-only data are mapped RO; writable data is mapped COW. The OS can use the same physical page frames for RO and unwritten COW data in all the processes that map the file.  If the code has to be relocated at runtime, the relocation process changes the code pages and they have to be treated as COW, not RO. 
+
+Considerable linker support is required by grouping all executable code into one segment that can be mapped, and all data into another part that can be mapped. Each segment must also be aligned on page boundaries. When several different programs use a shared library, the linker needs to mark each program so that when each starts, the library is mapped into the program's address space.
+
+Binding/Mapping of libraries depends on the nature of said library e.g., DLL vs Static Shared.
+
+##### Position Independent Code
+PIC is a body of machine code that executes properly regardless of its memory address. This is commonly used for shared libraries, so that the same library code can be loaded at a location in each program's address space where it does not overlap with other memory in use by, for example, other shared libraries. Can map code as read only. 
+
+PIC is fairly straightforward to create, must use relative addressing(all modern architectures support). E.g., ones discussed earlier all use relative jumps for intraroutine jumps, and use frame pointer in stack frame as relative point to access local variables and such. The only challenges are calls to routines not in the shared library, and references to global data. Discussed later.
 
 
 ### Intel x86 segmentation system
+Only segmented architecture still in common use. 
+Segmentation was a compromise introduced by original 8086 designers to provide a larger address space than the 16 bit architecture of its predecessors while still supporting compact code. 
+
+Modern x86 processors have relegated segmentation to a legacy role. The vast majority of modern processor architectures do not support segmentation, and favour paging and hardware support for paging over segmentation. 
+
+1. Multiple 16 bit Address spaces: The 8086 created multiple 16 bit address spaces, each known as a segment
+2. Segment registers: A running x86 program has four active segments defined by specialised 16 bit segment registers:
+	$CS$ (Code Segment) - Defines the segment from which instructions are fetched
+	$DS$ (Data Segment) - Defines the segment for most data load and store operations
+	$SS$ (Stack Segment) - Defines the segment used for the stack and for data references using EBP or ESP
+	$ES$ (Extra Segment) - Used by a few string manipulation instructions.
+The 386 and later chips provided two more segment registers, accessed primarily via **segment overrides**.
+	Any data reference can be directed into a specific, non-default segment using a segment override e.g., MOV EAX, CS:TEMP fetches data from the code segment instead of the default data segment.
+
+Often set DS and SS to the same value, allowing pointers to stack variables and global variables to be used interchangeably. Small programs might set all four segment registers the same, creating a single address space known as the **tiny model**.
+
+Most 386 operating systems now run applications in the **flat model** (or tiny model). They create a single code segment and a single data segment, both 4GB **long**, and map them to the full 32-bit paged address space, creating a unified address space once more. 
+
+In the flat model, segmentation becomes largely invisible to applications. This makes the x86 relatively **easy to handle** from a linker's perspective, as the linker primarily deals with 32-bit direct and PC-relative addresses.
+
+### Embedded architectures
+Linking for embedded architectures pose a variety of problems that rarely occur in other environments. Embedded chips have limited amounts of memory and limited performance, but embedded programs, may be built into millions of devices, great incentive to optimise!
+#### Address space quirks
+Small address spaces with quirky layouts. A 64KB address space can contain combinations of fast on-chip ROM and RAM, slow off-chip ROM and RAM, on-chip peripherals, and off chip-peripherals. There may be several noncontiguous areas of ROM or RAM. 
+
+Essentially, they do whatever they like, and for very good reason. A linker for an embedded system needs a way to specify the layout of the linked program in great detail by assigning particular kinds of code or data or even individual routines and variables to specific addresses to maintain the sanctity of the given address space. 
+#### Non uniform memory
+References to on-chip memory, faster. In system with both on and off chip, most time-critical routines go in fast memory. Sometimes possible to squeeze all of the programs time critical code into fast memory at link time, other times makes more sense to copy code or data from slow memory to fast memory as possible. 
+Linker has to perform some black magic to accomplish this trick!
+
+#### Memory alignment
+DSPs and embedded chips often have stringent memory alignment requirements for certain kinds of data structures. E.g., Motorola 56000 series has an addressing mode to handle circular buffers very efficiently, so long as the base address of the buffer is aligned on a power of two boundaries
+
+
+
+
 
 
