@@ -142,7 +142,7 @@ then gives A0 as leftmost in its final sentential form.
 We incorporate an additional step: forward substitution to convert indirect left recursion into direct left recursion, and then apply our previous mechanical transformation to produce the desired CFG. This algorithm assumes the original grammar has no cycles and no $e$ productions. 
 
 ![[Pasted image 20251014220222.png]]
-The algorithm may be veiwed as establishing a topological ordering on nonterminals. Algorithm highly sensitive to nonterminal order.
+The algorithm may be viewed as establishing a topological ordering on nonterminals. Algorithm highly sensitive to nonterminal order.
 
 ![[Pasted image 20251014222502.png]]
 
@@ -154,63 +154,69 @@ $A \to \alpha \ \beta_1 \ | \ \alpha \ \beta_2$
 becomes
 $A \to \alpha \ A'$
 $A' \to \beta_1 \ | \ \beta_2$
-Allows a predictive parsers (those which compute set of terminal symbols that can starts strings derived from each alternative, the **first set**, if there is a choice between two or more alternatives, insist the first sets are disjoint (a grammar restriction just implemented)) to consume $\alpha$ and then decide between $\beta_1, \beta_2$ using subsequent tokens, making such a choice deterministic with limited lookahead window.
+
+Allows predictive parsers (those which compute set of terminal symbols that can starts strings derived from each alternative, the **first set**, if there is a choice between two or more alternatives, insist the first sets are disjoint (a grammar restriction just implemented)) to consume $\alpha$ and then decide between $\beta_1, \beta_2$ using subsequent tokens, making such a choice deterministic with limited lookahead window.
 
 ### Backtrack-free parsing
 Major source of ineffeciency in leftmost TD parsing arises from need for backtracking. If expand lower fringe with wrong production, encounters mismatch when reach AST leaves, which correspond to words returned by scanner. The act of expanding, retracting, re-expacting fringe of AST wastes time and effort.
 
 Some parsers can enjoy a simple modification via the addition of a lookahead symbol, used to disambiguate all of the choices that arise in parsing the right-recursive expression grammar. Thus, we a say that a grammar is backtrack free with a lookahead of one symbol.
 
-We can formalise the property that makes right-recursive expression backtrack free. At each point in the parse, the choice of an expansion is obvious because each alternative for the leftmost nonterminal leads to a distinct terminal symbol (we have left factoring to thank for ensuring that first sets of a production's RHS are disjoint.)
+We can formalise the property that makes right-recursive expressions backtrack free. At each point in the parse, the choice of an expansion is obvious because each alternative for the leftmost nonterminal leads to a distinct terminal symbol (we have left factoring to thank for ensuring that first sets of a given production's RHS are disjoint.)
 
 
 Define $First(\alpha)$ as set of terminals that can appear at the start of a sentence derived from $\alpha$. If $\alpha$ is terminal, $\epsilon$ or $eof$ then $First(\alpha)$ has exactly one member, $\alpha$. (include $\epsilon$ if can be derived) For a nonterminal $A$, $First(A)$ contains the complete set of leading terminal symbols of sentential forms derived from $A$.
 
 Define $Follow(A)$ as the set of terminals that can appear immediately after nonterminal $A$ in some sentential form (or $\$$ if $A$ can appear at the end.)
 
-Formally:
-
-#### First and Follow
-Develop the notion of first and follow sets. For a **CFG** $G$ = $(N, T, P, S)$:$$
-
-\begin{array}{rll}
-
-first(\alpha) & = & \{ a \in T\mid\alpha \Rightarrow_{G}^*a\beta \} \\
-
-follow(A) & = & \{ a \in T \mid S \Rightarrow_{G}^*\alpha Aa\beta \}
-
- \cup \{ $ \ |S \Rightarrow_{G}^*\alpha A \}
-
-\end{array}
-
-$$
-where $\alpha,\ \beta \in(N\cup T)^*,\ A \in N$, and where $\$$ is a special "***end of input***" marker.
-
-**Follow set:** Follow set of some nonterminal $A$ consists of all terminals $a$ that can appear immediately after $A$ in some derivation from the start symbol. The End of input marker $\$ \in follow(A)$ if there exists a derivation where $A$ appears at the end of a string derived from $S$.
+We can formalise properties that we can use to derive backtree free parsers.
 
 
-##### Worked example
-if $A \to \beta C$
-- If $\beta$ is a terminal, add $\beta$ directly to $First(A)$
-- If $\beta$ is a nonterminal, add $First(\beta)$ to $First(A)$
-if $C \to \beta A \delta$
-- add $First(\delta)$ to $follow(A)$
-- if $\delta$ can derive the empty string, add $Follow(\delta)$ to $Follow(A)$
-if $C \to \beta A$
-- add $Follow(C)$ to $Follow(A)$
-![[Pasted image 20251015000946.png]]
+##### First sets
+The first set for a grammar symbol $\alpha$ is the set of terminal symbols (or words) that can appear as the first word in any string derived from $\alpha$.
+	- If $\alpha$ is a terminal, $\epsilon$, or $eof$, $First(\alpha)$ contains just $\alpha$ 
+	- For a nonterminal $A$, $First(A)$ contains all terminal symbols that can appear as the leading symbol in a sentential form derived from $A$.
+##### Follow Sets
+Follow set of some nonterminal $A$ consists of all the terminals $a$ that can appear immediately after $A$ in **some derivation from the start symbol.**
+Requires $First$ sets to already be available. 
 
-
-#### Start sets
-$Start(A \to B \ C)$ is the set of terminals that indicate that a production can be applied. 
-If $A \to B \ C$:
-	add $First(B)$ to start $(A \to B \ C)$
-	if $B$ can derive the empty string, also add $First(C)$
-	if all RHS can derive empty string, add $follow(A)$
-Each alternative for a nonterminal has a separate start set.
-
+1. $Follow(S)$ = $\$$
+2. If $A \to p \beta q$ is a production, where $p, \beta, q$ are any grammar symbols, then everything in $First(q)$ except $\epsilon$ is in $\beta$.
+3. If $A \to p\beta$ is a production, then everything in Follow(A) is also in Follow(B)
+4. If $A \to pBq$ is a production and $First(q)$ contains $\epsilon$, then $Follow(B)$ contains $(First(q) - \epsilon) \cup Follow(A)$
+##### Augmented first sets and LL(1) Grammar.
+![[Pasted image 20251021020951.png]]
+A grammar is considered **backtrack-free** if, for any nonterminal A with multiple alternative right-hand sides, the FIRST+ sets of those alternatives are pairwise disjoint (all disjoint). This is known as an **LL(1) grammar.**
 
 ### Hand-Coded Recursive Descent Parsers
+Backtrack free grammars lend themselves to simple and efficient parsing with a paraidm called recusive descent. A recursive descent parser is structured as a set of **mutually recursive** procedures, one for each non-terminal in the grammar. The procedure corresponding to nonterminal $A$ recognises an instance of $A$ in the input stream. To recognise a nonterminal $B$ in the right hand side for $A$, the parser invokes the procedure corresponding to $B$. Thus, the grammar itself serves as a guide to the parsers implementation. 
+
+Consider the following grammar:
+$$ Expr' \to  \ + \ Term \ |\  - \ Term \ Expr' \ | \  \epsilon$$
+
+To recongise instances of $Expr'$, create a routine $EPrime()$. Follows simple scheme, choose among the the three rules based on the augmented first sets of the productions. To test for a terminal symbol, performs direct comparison. To test for a nonterminal $A$, code invokes the procedure that corresponds to $A$. If successful, advances the input by calling $NextWord()$ . If it matches an $\epsilon$ production, the code does not call next word.
+![[Pasted image 20251021040139.png]]
+
+The natural location for generating informative error messages is when the parsers fails to find an expected terminal symbol. 
 
 
-### LL(1) Parsers
+### Table-Driven LL(1) Parsers
+Follwing the insights the underpin augmented $First$ sets, can automatically generate top-down parsers for LL(1) grammars. The tool constructs first, follow, and augmented first sets. The augmented firsts sets completely dictate the parsing decisions, so the tool can emit an efficient top-down parser. 
+
+The resultant parser is called an **LL(1)** parsers, derived from fact that these parsers scan their input left to right, construct a leftmost derivation, and use a lookahead of 1 symbol. 
+
+
+LL(1) parsers often implemented using a table-driven approach:
+- Skeleton parser - a table driven LL(1) parser relies on a skeleton algorithm that uses a stack to manage the unmatched portion of the parse tree's fringe. 
+- The parser initialises its stack with the $eof$ symbol and the grammar's start symbol $S$. 
+- It operates in a loop, repeatedly examining symbol at top of stack (the *focus*) and the current input word/token(word).
+- If the focus is a terminal, and matches the word, both are consumed, and focus is popped, NextWord() is called
+- If the focus is a nonterminal, the parser consults the parse table Table[focus, word] to determine the correct production. Pops the nonterminal and pushes the symbols of the selected productions right-hand side onto the stack in **reverse order**. 
+- The parse succeeds when both the focus and word are eof.
+
+The LL(1) parse table, ***Table*** codifies the parsing decisions taken by the skeleton parser by mapping pairs of nonterminals and lookahead symbols into productions. 
+
+- The algorithm for building the table iterates over every production $(A \to \beta)$ 
+- For every terminal $w \in FIRST^+$ $(A \to \beta)$, the table entry $Table[A, w]$ is set to the production $A \to \beta$. 
+- If the grammar is $LL(1)$, table construction completes in time proportional to $O(∣P∣ \times ∣T∣)$ 
+- If the grammar is not backtrack free, the algorithm assigns multiple productions to the same table entry, indicating a conflict.
