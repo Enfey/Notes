@@ -160,4 +160,54 @@ ABI dictates calling conventions, register usage, exception handling.
 - Exceptions/Mode registers - Has multiple operating modes e.g., User, Abort, Supervisor, Undefined, each with banked registers (multiple copies of registers that are accessible depending on the processor's current execution mode(R13, R14, SPSrs)). 
 
 ### Exercises
-TODO!
+1.1 : What is the advantages of separating linker and loader into separate programs? Under what circumstances would a combined linking loader be useful?
+
+One could postulate that the advantage lies in their simple distinction of responsibilities. A linkers inputs and outputs and transformations differ in nature to a loader, although they are part of the same pipeline. Linkers perform relocation, patching object code according to relocation entries, often express addresses relative to some base, such as relocating segments and using all addresses relative to those relocated segments. In modern computers, programs are entitled to their own logical address space, often starting at 0x0. Older systems which link programs to load at 0x0, may have the loader perform final relocation. Also DLLs and such.
+
+Combined linking loaders would have been useful in archaic machines, before the advent of OSs, as monoprogramming was prevalent, could be linked to load at fixed memory addresses each time, the distinction was not exactly needed, thus the program could do symbol resolution, relocation, and loading in one fell swoop. 
+
+1.2: Nearly every programming system in the last 70 years or so includes a linker. Why?
+Linkers permit modularity and reuse via permitting programs to be built from modules rather than a monolithic program. The fundamental job of a linker is bind abstract names to more concrete names. The evolution of programming languages and systems increased the complexity of name management and address binding, which gave rise to this component of the execution pipeline; encompassing features like dynamically linked shared libraries, name mangling, storage layout and ABI compliance etc. 
+
+1.3: Linkers in interpretive systems
+Java Virtual Machine (JVM) Linking Model: Java employs a sophisticated loading and linking model. Java organizes a program into **classes**, usually compiled into separate binary object code files.
+
+Java loads and links **one class at a time**. If an initial class refers to others, those classes are **loaded on demand when they are needed**. This process is known as **resolution**, which is analogous to dynamic linking in other languages. Resolution includes resolving symbolic references in a classes constant pool to other classes, fields, or methods, which occurs after the class is loaded. 
+
+
+2.1a) In a CALL instruction, the high 2 bits are the instruction code, and the low 30 bits are a signed word offset. What are the hex addresses for X, Y and Z
+
+X = 01 instruction code, 00 0000 0000 0000 0000 0011 0000 0000 in binary
+256+512 = 768 words << 2  = 3072 = 0xC00 in hex
+Address 0x1000 + 0xC00 = 0x1C00
+MSB is 0 so know it is positive jump.
+
+
+
+Y = 7F FF FE ED = 0111 1111 1111 1111 1111 1110 1110 1101
+Instruction code  = 01 thus 30 bit offset = 11 1111 1111 1111 1111 1110 1110 1101 = 0x3FFFFEED
+0x3FFFFEED−0x40000000=−0x00000113 (0x4... is the modulus)
+Byte offset=(−0x113)×4=−0x44C
+0x100C−0x44C =0x0BC0
+
+2.1b)The CALL Z instruction at location 0x1010 targets address 0x1018. 
+
+The instruction at 0x1018 is: `SETHI r1,3648367`. This is the first of a two-instruction sequence designed to load a full 32-bit address into register r1 to perform register indirect addressing, rather than PC/Instruction relative addressing. 
+
+2.1c)
+
+
+
+2.3) A linker of loader does not need to fully understand every instruction in the target architecture's instruction set. Exquisitively sensitive to program addressing and instruction formats, rather than the instructions themselves. The linkers job concerning instruction involves code relocation, modifying address fields and ensuring that such modifications ensure ABI and addressing mode compliance. Only if a new instruction format is introduced, must the linker need to be changed. If new addressing modes are added, generally the linker would need to be updated, although this depends on the nature of the addition. E.g., if the new modes define addresses that cannot fit within existing relocation structures, or if the calculation logic itself changes (e.g., changing from 16-bit segmented addressing to 32-bit flat/paged addressing), the linker would need updates to handle the complex encoding.
+
+2.4) Linking for a word addressed architecture differs to linking for a byte addressed architecture primarily in how addresses are calculated, stored+aligned. In a word addressed system, offsets used within instructions refer to whole words, simplifying calculations. In a byte addressed system, offsets still represent words (saves $n$ bits per instruction, and guarantees alignment) and have to be shifted left to derive the byte offset before using it in address formation. 
+
+e.g., arm, **When a word access is signaled the memory system ignores the bottom two bits, A[1:0], and when a halfword access is signaled the memory system ignores the bottom bit, A[0].**
+
+All data values must be aligned on their natural boundaries. All words must be word-aligned.
+
+2.5) Inherently difficult, as linkers are exquisitely sensitive to architectural details of addressing modes and instruction formats. The complex nature of ISAs mean that address encoding, alignment rules, necessary relocation methods vary widely from ISA to ISA e.g., SPARC requires  specialised relocation types to synthesise a 32 bit address (SETHI and OR) for register indirect addressing. Creating such a linker where this detailed, and foolproof patching logic is confined to 'changing a few parts of the code' would be remarkably difficult. 
+
+A **multi-target linker** (one that can handle code for various different architectures, though not simultaneously) is considerably easier to build and is common in practice. Such a linker can achieve generality by having modular components to handle architecture-independent tasks like symbol binding and segment allocation, and separate, specialized components for architecture-dependent tasks. For example, the GNU linker handles a vast range of object file formats, machine architectures, and address space conventions, often relying on a DSL input to provide target details. 
+
+
