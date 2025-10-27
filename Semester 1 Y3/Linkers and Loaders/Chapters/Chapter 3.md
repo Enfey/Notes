@@ -106,6 +106,7 @@ As seen with DOS, loads program into a contiguous chunk of available real-mode m
 
 (necessary info to understand this)
 *x86 segment registers hold a 16 bit value - this is not a raw address, it is a paragraph number. So a segment value of `0x1234` means the base of that segment is:  0x1234 ≪ 4=0x12340. This was done because the chip needed to address **1 MB of physical memory** (20 bits of address lines). Including a 16 bit offset, each segment defines a 64KB window of memory in a 1MB memory space.* 
+
 Linker lays out sections into image and writes stored segment values (paragraph numbers, representing 16 byte units) wherever a segment base must be referenced(far pointers, seg symbol). Those stored segment values are relative to the image base = paragraph 0. Offsets are computed relative to segment base. 
 
 DOS loader picks a real load paragraph $L$ where the image is to be placed, copies the image intact to memory at address ($L << 4$ ), and for each relocation entry, it reads the 16 bit stored segment word and replaces it with $stored + L$. Offsets inside sections need not be changed. Shifts image to where actually sits in memory, despite linking to load at address 0. 
