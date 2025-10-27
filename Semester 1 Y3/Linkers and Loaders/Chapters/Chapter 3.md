@@ -206,40 +206,107 @@ Relocatable files have section tables, executable files have program header tabl
 ![[Pasted image 20251027002523.png]]
 
 ELF files all start with a leading ELF header, designed to be decodable regardless of architecture endianness; 
-
-```C
-typedef struct {
-    unsigned char e_ident[16]; /* Magic number and other info */
-    Elf32_Half    e_type;      /* Object file type */
-    Elf32_Half    e_machine;   /* Architecture */
-    Elf32_Word    e_version;   /* Object file version */
-    Elf32_Addr    e_entry;     /* Entry point virtual address */
-    Elf32_Off     e_phoff;     /* Program header table file offset */
-    Elf32_Off     e_shoff;     /* Section header table file offset */
-    Elf32_Word    e_flags;     /* Processor-specific flags */
-    Elf32_Half    e_ehsize;    /* ELF header size in bytes */
-    Elf32_Half    e_phentsize; /* Program header table entry size */
-    Elf32_Half    e_phnum;     /* Program header table entry count */
-    Elf32_Half    e_shentsize; /* Section header table entry size */
-    Elf32_Half    e_shnum;     /* Section header table entry count */
-    Elf32_Half    e_shstrndx;  /* Section header string table index */
-} Elf32_Ehdr;
-```
+![[Pasted image 20251027172335.png]]
 
 `e_ident[16]` contains the magic number identifying this as an ELF file (127, 0x7F), contains `EI_CLASS` denoting word size, `EI_DATA` denoting endianness, `EI_VERSION` denoting ELF version (always 1), `EI_OSABI`, `EI_ABIVERSION`. Everything here is one byte each, endianness doesn't affect this, so linker can parse this and then determine how to interpret data. 
+![[Pasted image 20251027172723.png]]
+
+
+`e_type` identifiers object file type, `e_machine` identifies target architecture.
 #### Relocatable ELF files
-A relocatable or shared-object file is considered to be a collection of sections as defined in the section header table, containing the data necessary to combine file with other object files to form final executable
+A relocatable or shared-object file is considered to be a **collection of sections** as defined in the **section header table**, containing the data necessary to combine file with other object files to form final executable. This table is an array of structures (`Elf32_Shdr` in our case). Every section in the file has exactly one section header describing it. 
+
+The ELF header entry (`e_shoff`) provides the byte offset from the beginning of the file to the section header table, while `e_shentsize` gives the size in bytes of each entry, and `e_shnum` tells how many entries the table contains. 
+
+##### Section Header
+The ELF section header, is defined as follows:
+![[Pasted image 20251027173124.png]]
+
+| SH field       | Description                                                                                                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sh_name`      | Specifies the name of the section, given as an index into the section header string table section, yielding a NUL-terminated string.                                                                          |
+| `sh_type`      | Categorises the sections contents and semantics.                                                                                                                                                              |
+| `sh_flags`     | Holds 1 bit flags describing miscellaneous attributes e.g., occupies memory during process execution, special ordering requirements for link editors, data in section may be merged to eliminate duplication. |
+| `sh_addr`      | If the section appears in the process's memory image i.e., is to be loaded, this member gives the virtual address where the first byte should reside.                                                         |
+| `sh_offset`    | The byte offset from the beginning of the file to the first byte in the section.                                                                                                                              |
+| `sh_size`      | Section's size in bytes                                                                                                                                                                                       |
+| `sh_addralign` | Specifies address alignment constraints; the value of `sh_addr` must be congruent to 0, modulo this alignment value.                                                                                          |
+| `sh_entsize`   | gives size in bytes of each entry if section holds a table of fixed-size entries, such as a symbol table. Contains 0 if no table.                                                                             |
+
+###### Section Types `sh_type`
+Section types categorise the semantics of a given sections contents and appear as a member in its header. Common section types include:
+
+| Section Type            | Description                                                                                                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SHT_NULL`              | Marks section header as inactive; does not have associated section.                                                                                                                                                       |
+| `SHT_PROGBITS`          | The section holds information defined by the program, such as executable code, read-only data; format and meaning determined solely by the program.                                                                       |
+| `SHT_SYMTAB/SHT_DYNSYM` | These sections hold a symbol table. Typically, `SHT_SYMTAB` provides symbols for link editing. Consequently, an object file may also contain a `SHT_DYNSYM` section, which holds a minimal set of dynamic linking symbol. |
+| `SHT_STRTAB`            | The section holds a string table. An object file may have multiple string table sections.                                                                                                                                 |
+| `SHT_RELA`              | Section holds relocation entries with explicit addends. An object file may have multiple relocation sections.                                                                                                             |
+| `SHT_DYNAMIC`           | Section holds information for dynamic linking.                                                                                                                                                                            |
+| `SHT_NOTE`              | Section holds information that marks the file in some way.                                                                                                                                                                |
+| `SHT_NOBITS`            | A section of this type occupies no space in the file, but otherwise resembles `SHT_PROGBITS`. The `sh_offset` field in header contains conceptual offset from beginning of file, though occupies no bytes.                |
+| `SHT_REL`               | Section holds relocation entries without explicit addends.                                                                                                                                                                |
+| `SHT_INIT_ARRAY`        | This section contains an array of pointers to initialisation functions. Each pointer in the array is taken as a parameterless procedure with a void return.                                                               |
+| `SHT_FINI_ARRAY`        | Section contains an array of pointers to termination functions. Each pointer in the array is taken as a parameterless procedure with a void return.                                                                       |
+| `SHT_PREINIT_ARRAY`     | Section contains an array of pointers to functions that are invoked before all other initialisation functions. Each pointer in the array taken as a parameterless procedure with a void return.                           |
+| `SHT_GROUP`             | Defines a section group; a set of sections that are related and must be treated specially by the linker. Only appear in relocatable objects, that is, objects with the ELF header member `e_type` set to `ET_REL`.        |
+
+###### Sidenote: Relocation: Rel vs Rela
+###### Section Attribute Flags `sh_flag`
+`sh_flags`, single member of given section header of type `Elf32_Word` and contains 1 bit flags that describe miscellaneous attributes of a given section:
+
+| Flag             | Value  | Description                                                                                                                          |
+| ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `SHF_WRITE`      | `0x1`  | Section contains data that should be writable during process execution                                                               |
+| `SHF_ALLOC`      | `0x2`  | Section occupies memory during process execution. Some control sections do without this flag thus do not reside in the memory image. |
+| `SHF_EXECINSTR`  | `0x4`  | Section contains executable machine instructions.                                                                                    |
+| `SHF_MERGE`      | `0x10` | The data in this section may be merged to eliminate duplication.                                                                     |
+| `SHF_STRINGS`    | `0x20` | The data elements consist of null-terminated character strings. This is often used alongside `SHF_MERGE`                             |
+| `SHF_LINK_ORDER` | `0x40` | Imposes special ordering requirements for link editors if the section is combined with others.                                       |
+| `SHF_GROUP`      | —      | Indices the section is a member of a section group.                                                                                  |
+
+If the flag bit is set in `sh_flags` the attribute is 'on' for that section. 
+
+###### Sections 
+In a relocatable ELF file(`e_type = ET_REL`), a section contains all the information in the file bar the ELF header, program header table(optional), and the section header table. 
+
+Each section occupies one contiguous sequence of bytes within the file. Importantly, sections in a file cannot overlap.
+
+Every section in an object file has exactly one section header (`ELF32_Shdr` structures) describing it in the section header table. 
+
+Various sections hold program and control information. The following details the sections that are used by the system and have indicated types and attributes:
+
+| Section                       | Description                                                                                                                                                                                                                                                      | Type             | Flags                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ------------------------------- |
+| `.bss`                        | Holds uninitialised data that contributes to the program's memory image. Occupies no file space.                                                                                                                                                                 | `SHT_NOBITS`     | `SHF_ALLOC`<br>+`SHF_WRITE`     |
+| `.comment`                    | Holds version control information.                                                                                                                                                                                                                               | `SHT_PROGBITS`   | none                            |
+| `.data/.data1`                | Hold initialised data that contribute to program memory image.                                                                                                                                                                                                   | `SHT_PROGBITS`   | `SHF_ALLOC`<br>+`SHF_WRITE`     |
+| `.text/1`                     | Holds the executable instructions of a program.                                                                                                                                                                                                                  | `SHT_PROGBITS`   | `SHF_ALLOC`<br>+`SHF_EXECINSTR` |
+| `.debug`                      | Holds info for symbolic debugging.                                                                                                                                                                                                                               | `SHT_PROGBITS`   | none                            |
+| `.rodata/1`                   | Hold read only data that typically contribute to non-writable segment in process image.                                                                                                                                                                          | `SHT_PROGBITS`   | `SHF_ALLOC`                     |
+| `.rel{name}`<br>`.rela{name}` | Hold relocation information as defined by `Elf32_Rel`. If file has a loadable segment that includes relocation, section's attribute will include `SHF_ALLOC` bit; otherwise off. Conventionally, name is supplied by the section to which the relocations apply. | `SHT_REL/A`<br>  | `SHF_ALLOC` (see desc)          |
+| `.interp`                     | Holds path name of program interpreter.                                                                                                                                                                                                                          | `SHT_PROGBITS`   | `SHF_ALLOC`, depends            |
+| `.symtab`                     | Holds `Elf32_Sym` table providing symbol information for link editing. If file had loadable segment that includes `.symtab`, sections attributes will include `SHF_ALLOC bit`; otherwise off.                                                                    | `SHT_SYMTAB`     | `SHF_ALLOC`, (see desc)         |
+| `.dynsym`                     | Holds dynamic linking symbol table.                                                                                                                                                                                                                              | `SHT_DYNSYM`     | `SHF_ALLOC`                     |
+| `.strtab`                     | Holds strings, most commonly the strings that will represent the names associated with symbol table entries. If the file has a loadable segment that includes `.strtab`, section's attributes will include `SHF_ALLOC` bit, otherwise off.                       | `SHT_STRTAB`     | `SHF_ALLOC` (see desc)          |
+| `.dynstr`                     | Holds strings needed for dynamic linking, most commonly strings that represent the names associated with symbol table entries.                                                                                                                                   | `SHT_STRTAB`     | `SHF_ALLOC`                     |
+| `.got`                        | Holds the global offset table.                                                                                                                                                                                                                                   | `SHT_PROGBITS`   |                                 |
+| `.init`                       | Holds executable instructions that contribute to process initialisation code. When program runs, system arranges to execute code in `.init` before calling entry point.                                                                                          | `SHT_PROGBITS`   | `SHF_ALLOC`<br>+`SHF_EXECINSTR` |
+| `.init_array`                 | Holds array of function pointers that contribute to a single initialisation array.                                                                                                                                                                               | `SHT_INIT_ARRAY` | `SHF_ALLOC` + `SHF_WRITE`       |
+| `.fini`                       | Holds executable instructions that contribute to process termination code. When program exits normally, system arranges to execute code in this section afterwards.                                                                                              | `SHT_PROGBITS`   | `SHF_ALLOC`<br>+`SHF_EXECINSTR` |
+| `.fini_array`                 | Holds array of function pointers that contribute to single termination array for the executable or shared object containing the section within a segment.                                                                                                        | `SHT_FINI_ARRAY` | `SHF_ALLOC` + `SHF_WRITE`       |
+| `.line`                       | Holds line number information for symbolic debugging.                                                                                                                                                                                                            | `SHT_PROGBITS`   | none                            |
 
 
 
 
-#### Executable ELF files
 
 
 
-### PE Files (tomorrow)
+#### Executable ELF files (today)
 
-## Exercises (tomorrow)
+## Exercises (today)
 
 
 
