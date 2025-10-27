@@ -89,7 +89,9 @@ Compact pageable format developed to overcome the drawback of ZMAGIC wasting dis
 
 The QMAGIC format optimises space and safety via specific loading and structural conventions. Considers the header to be part of the text segment. 
 
-The kernel maps the program into memory such that the header + beginning of text segment are mapped starting at virtual address $page\_size$, leaving the first virtual page unmapped, letting null pointer dereference trigger a fault instead of landing in mapped code/data. This is the key change from zmagic, other than considering the header to be part of the text segment, and also rounding up the data segment to a full page, so the system can easily memory map file chunks to virtual address space pages.
+The kernel maps the program into memory such that the header + beginning of text segment are mapped starting at virtual address $page\_size$, leaving the first virtual page unmapped, letting null pointer dereference trigger a fault instead of landing in mapped code/data.
+
+This is the key change from zmagic, other than considering the header to be part of the text segment, and also rounding up the data segment to a full page, so the system can easily memory map file chunks to virtual address space pages.
 
 The last page of the data segment is padded out with zeros for bss data; if more bss data exists than fits in the padding area, the header contains the size of the remaining bss area to allocate. 
 
@@ -98,18 +100,145 @@ The header is used to create the logical address space and enforce constraints e
 ### DOS EXE Files
 The a.out format is adequate for systems that assign a fresh, private logical address space to each process as it assumes a program is linked to load at one fixed virtual address. 
 
-### Relocatable a.out
+However, this is not the case for all systems. Some load all the programs into the same virtual address space. Others give each program its own address space, but randomise the starting address, and other portions of the process, aka address space layout randomisation, where code, data, stack, shared libraries have their addresses randomised at load time.
+
+As seen with DOS, loads program into a contiguous chunk of available real-mode memory. If the program doesn't fit in one 64KB segment, the program has to use explicit section numbers to address the program and data relatively. 
+
+(necessary info to understand this)
+*x86 segment registers hold a 16 bit value - this is not a raw address, it is a paragraph number. So a segment value of `0x1234` means the base of that segment is:  0x1234 ≪ 4=0x12340. This was done because the chip needed to address **1 MB of physical memory** (20 bits of address lines). Including a 16 bit offset, each segment defines a 64KB window of memory in a 1MB memory space.* 
+Linker lays out sections into image and writes stored segment values (paragraph numbers, representing 16 byte units) wherever a segment base must be referenced(far pointers, seg symbol). Those stored segment values are relative to the image base = paragraph 0. Offsets are computed relative to segment base. 
+
+DOS loader picks a real load paragraph $L$ where the image is to be placed, copies the image intact to memory at address ($L << 4$ ), and for each relocation entry, it reads the 16 bit stored segment word and replaces it with $stored + L$. Offsets inside sections need not be changed. Shifts image to where actually sits in memory, despite linking to load at address 0. 
+
+The patched segment values exist in memory, and can be put into segment registers as needed. Use $(segment << 4) + offset$ to compute memory address. 
+
+File header contains a number of details:
+
+$$
+\begin{gathered}
+\text{char signature[2] = "MZ"; // magic number} \\
+\text{short lastSize // num bytes used in last block} \\
+\text{short nBlocks //number of 512 byte blocks} \\
+\text{short hdrsize //fsize of file header in 16 byte paragraphs}
+\\
+\text{short minalloc //min extra memory to allocate} \\
+\text{short maxalloc // max extra memory to allocate} \\
+\text{void far *sp // initial stack pointer} \\
+\text{short checksum //one's complement checksum of file} \\
+\text{void far *ip // initial instruction pointer} \\
+\text{short relocpos // location of relocation table} \\
+\text{short nooverlay // overlay number, 0 for program} \\
+\text{char extra[] //extra material for overlays etc} \\
+\text{void far *relocs[] //relocation entries, starts at relocpos}
+\end{gathered}
+$$
+Actual load process is as follows:
+1. Read in header and check magic number for validity
+2. Find a suitable area of memory. The minalloc and maxalloc fields identify the minimum and maximum number of extra paragraphs of memory to allocate beyond the end of the loaded program (linkers often default to the minimum to size of program's bss and max to 0xFFFF)
+3. Create a PSP (control area at head of program)
+4. Read in program code immediately after PSP; nblocks and lastsize fields determine length of code.
+5. Start reading nreloc fixups at relocpos. For each fixup, add the base address of the program code, $L$ to the segment number in the fixup. 
+6. Set the stack pointer to sp, relocate, jump to ip, relocate, start the program. 
+### Loadable Formats vs Linkable Formats
+Object formats covered thus far were **loadable**. That is, they can be loaded into memory and run directly. Most object files aren't loadable, but rather are intermediate files passed from a compiler or assembler to a linker or library manager. **Linkable** files, we denote these, can be much more complex than loadable ones. Loadable formats have to be simple enough to be directly executed with issues, whilst linkable formats are further processed by a layer of software. 
+
+### Relocatable A.Out - Linkable
+Unix always used same general format for both loadable and linkable object files. 
+
+A relocatable a.out file includes several sections necessary for the linking process:
+$$
+\begin{gathered}
+\text{int a\_magic //magic number} \\
+\text{int a\_text //text segment size} \\
+\text{int a\_data //initialised data size}  \\
+\text{int a\_bss //uninitialised data size} \\
+\text{int a\_syms //symbol table size} \\
+\text{int a\_entry //entry point} \\
+\text{int a\_trsize //text relocation size} \\
+\text{int a\_drsize//data relocation size} \\
+\end{gathered}
+$$
+The three sections used by the linker are specified by the following fields in the header: $a\_syms$, $a\_trsize$, $a\_drsize$. They follow the main text and data sections in the file, as seen below. 
+![[Pasted image 20251026220946.png]]
+
+#### Relocation Entries
+Relocation entries in a relocatable $a.out$ file serve 2 functions:
+1. Marking places in the code that must be modified due to segment relocation
+	Remember! Linkers perform storage allocation: the initial assumption is that all segments reside at logical address 0, or some other default base address, the linker's first major task is reading all input files and grouping corresponding segments to reflect memory layout, respecting alignment and such. This concatenation means original segments must be relocated to new, calculated, non-zero base addresses. This affects both absolute addresses, and inter-segment program references.
+2. Marking references to undefined external symbols so the linker knows where to insert the final address value. 
+The format of an $a.out$ relocation entry includes
+- $Address$ - Specifies the byte offset within the section where the fixup should be applied.
+- $r\_length$ - Specifies the width of the relocatable item
+- $r\_pcrel$ - Specifies whether relocation should be computed relative to program counter (instruction address) or absolute. 
+- $r\_extern$ - Controls the interpretation of the index field - whether relocation references an external symbol or refers to a section/segment.
+	- If off, the index tells which segment (text, data, or bss) the item is addressing.
+	- If on, this is a reference to an external symbol, and the index is the symbol number in the file's symbol table. 
+
+![[Pasted image 20251026222454.png]]
+
+![[Pasted image 20251026223323.png]]
+
+#### Symbols and Strings
+The final section of an a.out file is the symbol table. Each entry is **12 bytes** and describes a single symbol. UNIX compilers permit arbitrarily long identifiers, so the name strings are all in a string table that follows the symbol table.
+- **Symbol table**: an array of symbol records, each record containing the symbol's *name offset*, type, debug info, spare value(address)
+- **String table**: a blob of NUL-terminated strings containing the actual symbol names, pointed to by offset in symbol records in symbol table.
+
+![[Pasted image 20251026223154.png]]
+First item in a symbol table record is the offset/index into the string table, points to NUL-terminated name of the symbol. The type item is a byte long; if the low bit is set, the symbol is global and visible to other modules, non-global if not, non-global non-external symbols not needed for linking technically, but can be used by debuggers. The rest of the bits specify the symbol type, most important types include the following(unix n_type in n list struct)
+- **text, data, bss** - if any of these set, tells you where symbol resides
+- **abs** - absolute unrelocatable symbol
+- **undefined** - symbol is not defined in this module, the external(global) bit must be on. 
 
 
 
 
+### ELF (32 bit)
+Executable and Linking format, succeeded $a.out$ for $*nix$ systems. ELF files vary in their format, can be either: **relocatable**, **executable** and **shared object**. Relocatable files are created by compilers and assemblers but need to be processed by linker before running. Executable files have all relocation done and symbols resolved except perhaps shared-library symbols that must be resolved at run-time. Shared objects are shared libraries, containing both symbol information for the linker and directly runnable code for run time. 
+
+ELF files have an unusual dual nature. Compilers, assemblers, and linkers treat the file as a set of logical sections described by a section header table.
+
+Meanwhile, loader treats the file as a set of segments, described by the program header table. A single segment will usually consist of several sections. 
+	For example, a loadable read-only segment could contain sections for executable code, read-only data, and symbols for the dynamic linker.
+
+Relocatable files have section tables, executable files have program header tables, and shared objects have both. The sections are intended for further processing by a linker, while the segments are intended to be mapped into memory. 
+
+![[Pasted image 20251027002523.png]]
+
+ELF files all start with a leading ELF header, designed to be decodable regardless of architecture endianness; 
+
+```C
+typedef struct {
+    unsigned char e_ident[16]; /* Magic number and other info */
+    Elf32_Half    e_type;      /* Object file type */
+    Elf32_Half    e_machine;   /* Architecture */
+    Elf32_Word    e_version;   /* Object file version */
+    Elf32_Addr    e_entry;     /* Entry point virtual address */
+    Elf32_Off     e_phoff;     /* Program header table file offset */
+    Elf32_Off     e_shoff;     /* Section header table file offset */
+    Elf32_Word    e_flags;     /* Processor-specific flags */
+    Elf32_Half    e_ehsize;    /* ELF header size in bytes */
+    Elf32_Half    e_phentsize; /* Program header table entry size */
+    Elf32_Half    e_phnum;     /* Program header table entry count */
+    Elf32_Half    e_shentsize; /* Section header table entry size */
+    Elf32_Half    e_shnum;     /* Section header table entry count */
+    Elf32_Half    e_shstrndx;  /* Section header string table index */
+} Elf32_Ehdr;
+```
+
+`e_ident[16]` contains the magic number identifying this as an ELF file (127, 0x7F), contains `EI_CLASS` denoting word size, `EI_DATA` denoting endianness, `EI_VERSION` denoting ELF version (always 1), `EI_OSABI`, `EI_ABIVERSION`. Everything here is one byte each, endianness doesn't affect this, so linker can parse this and then determine how to interpret data. 
+#### Relocatable ELF files
+A relocatable or shared-object file is considered to be a collection of sections as defined in the section header table, containing the data necessary to combine file with other object files to form final executable
 
 
 
 
+#### Executable ELF files
 
 
-### ELF files
+
+### PE Files (tomorrow)
+
+## Exercises (tomorrow)
 
 
 
