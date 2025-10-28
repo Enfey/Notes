@@ -253,6 +253,28 @@ Section types categorise the semantics of a given sections contents and appear a
 | `SHT_GROUP`             | Defines a section group; a set of sections that are related and must be treated specially by the linker. Only appear in relocatable objects, that is, objects with the ELF header member `e_type` set to `ET_REL`.        |
 
 ###### Sidenote: Relocation: Rel vs Rela
+REL entries within `.rel{name}` section of type `SHT_REL` are relocation entries without explicit addends. The standard struct is `Elf32_Rel`:
+```C
+typedef struct {
+	Elf32_Addr r_offset;
+	Elf32_Word r_info;
+} Elf32_Rel;
+```
+`r_offset`-gives location at which to apply relocation action, for relocatable file, the value is the byte offset from the beginning of the section to the unit affected by the relocation. For executable or shared object, the value is the virtual address.
+
+`r_info` - gives both the symbol table index with respect to which the relocation must be made, and the type of relocation to apply. For example, a call instruction relocation entry would hold the symbol table index of the function being called.  Relocation types are processor specific.
+
+```C
+typedef struct {
+	Elf32_Addr  r_offset;
+	Elf32_Word  r_info;
+	Elf32_Sword r_addend;
+} Elf32_Rela;
+```
+`r_addend` - specifies a constant addend used to compute the value to be stored into the relocatable field. 
+
+
+The typical application of an ELF relocation is to determine the referenced symbol value, extract the addend (either from field to be relocated or from addend field contained in relocation record), apply the expression implied by relocation type to symbol and addend, extract desired part of the expression result, place it in field to be relocated. 
 ###### Section Attribute Flags `sh_flag`
 `sh_flags`, single member of given section header of type `Elf32_Word` and contains 1 bit flags that describe miscellaneous attributes of a given section:
 
@@ -297,7 +319,31 @@ Various sections hold program and control information. The following details the
 | `.fini`                       | Holds executable instructions that contribute to process termination code. When program exits normally, system arranges to execute code in this section afterwards.                                                                                              | `SHT_PROGBITS`   | `SHF_ALLOC`<br>+`SHF_EXECINSTR` |
 | `.fini_array`                 | Holds array of function pointers that contribute to single termination array for the executable or shared object containing the section within a segment.                                                                                                        | `SHT_FINI_ARRAY` | `SHF_ALLOC` + `SHF_WRITE`       |
 | `.line`                       | Holds line number information for symbolic debugging.                                                                                                                                                                                                            | `SHT_PROGBITS`   | none                            |
+`.interp` in practice used to call the run-time dynamic linker to load the program and to link in any required shared libraries.
 
+ELF symbol table is similar to `a.out` symbol table. It consists of an array of entries `Elf32_Sym`:
+```C
+typedef struct {
+	Elf32_Word    st_name;
+	Elf32_Addr    st_value;
+	Elf32_Word    st_size;
+	unsigned char st_info;
+	unsigned char st_other
+	Elf32_Half    st_shndx;
+} ELF32_Sym;
+```
+
+| Field      | Description                                                                                                                                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `st_name`  | Holds index into object file symbol string table - yields NUL-Terminated representation of symbol name.                                                                                                                                                                                                |
+| `st_value` | Gives value of associated symbol; depending on context, may be absolute value, an address etc. Holds file interpretation in linkable format, holds memory interpretation/virtual address in executable format.                                                                                         |
+| `st_size`  | Gives size of associated symbol; 0 if no size or unknown size                                                                                                                                                                                                                                          |
+| `st_info`  | Specifies symbol's type and binding attributes; type is normally a data object(`STT_OBJECT`) or function(`STT_FUNC`). A binding determines object file scope. Local = visible to object file only, global = visible to all, weak resemble global symbols, but their definitions have lower precedence. |
+| `st_other` | Specifies symbol visibility.                                                                                                                                                                                                                                                                           |
+| `st_shndx` | Every symbol table entry defined in relation to some section; this member holds the relevant section header table index.                                                                                                                                                                               |
+
+##### Final Diagram
+![[Pasted image 20251027220549.png]]
 
 
 
@@ -305,7 +351,73 @@ Various sections hold program and control information. The following details the
 
 
 #### Executable ELF files (today)
+Another type of object file specified by ELF `ET_EXEC`, alongside relocatable files and shared object files. An executable files holds a program that is ready for execution and specifies how the system creates a program's process image. Relies primarily on the **Execution View**.
 
+An executable file contains a **program header table**; an array of structures (`Elf32_Phdr`), with each header/structure describing a segment or other information the system needs in order to prepare the program for execution. This header table is only meaningful for executable and shared object files. File specifies program header size with the ELF header's `e_phentsize` and `e_phnum` members. 
+
+An object file segment contains one or more sections as described by a section header table. 
+	![[Pasted image 20251027225035.png]]
+
+##### Program Header
+```C
+typedef struct {
+	Elf32_Word	p_type;
+	Elf32_Off	p_offset;
+	Elf32_Addr	p_vaddr;
+	Elf32_Addr	p_paddr;
+	Elf32_Word	p_filesz;
+	Elf32_Word	p_memsz;
+	Elf32_Word	p_flags;
+	Elf32_Word	p_align;
+} Elf32_Phdr;
+```
+
+| Field      | Description                                                                                                                                                                                                                                                                                                                                                            |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `p_type`   | Denotes what kind of segment this array element describes.                                                                                                                                                                                                                                                                                                             |
+| `p_offset` | Gives the offset from the beginning of the file at which the first byte of the segment resides.                                                                                                                                                                                                                                                                        |
+| `p_vaddr`  | This member gives the virtual address at which the first byte of the segment resides in memory. Where to map segment.                                                                                                                                                                                                                                                  |
+| `p_paddr`  | On systems for which physical addressing is relevant, this member is reserved for the segment's physical address.                                                                                                                                                                                                                                                      |
+| `p_filesz` | This member gives the number of bytes in the file image of the segment; it may be 0.                                                                                                                                                                                                                                                                                   |
+| `p_memsz`  | This member gives the number of bytes in the memory image of the segment; it may be 0.                                                                                                                                                                                                                                                                                 |
+| `p_flags`  | This member gives flags relevant to the segment.                                                                                                                                                                                                                                                                                                                       |
+| `p_align`  | This member gives the value to which the segments are aligned in memory and in the file. Values 0 and 1 mean no alignment is required. Otherwise, should be a positive power of 2, and `p_vaddr` should equal `p_offset` modulo `p_align`. A segment can start and end at arbitrary file offsets, but the virtual starting address is subject to the above constraint. |
+###### Segment Types
+| Name         | Value | Description                                                                                                                                                                                                                                                                                         |
+| ------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PT_NULL`    | 0     | Array element is unused; lets program header table have ignored entries.                                                                                                                                                                                                                            |
+| `PT_LOAD`    | 1     | Specifies loadable segment, described by `p_filesz` and `p_memsz`. Bytes from the file are memory mapped to the beginning of the memory segment. If the segments memory size is larger than the file size, the extra bytes are defined to hold the value and follow the segment's initialised area. |
+| `PT_DYNAMIC` | 2     | Specifies dynamic linking information.                                                                                                                                                                                                                                                              |
+| `PT_INTERP`  | 3     | Specifies location and size of null-terminated path to invoke an interpreter. If present, must precede any loadable segment entry, to load this instead of main program.                                                                                                                            |
+| `PT_NOTE`    | 4     | Specifies location and size of auxilary info.                                                                                                                                                                                                                                                       |
+| `PT_SHLIB`   | 5     | Reserved but has unspecified semantics.                                                                                                                                                                                                                                                             |
+| `PT_PHDR`    | 6     | Specifies location and size of program header table itself; segment type may not occur more than once in a file.                                                                                                                                                                                    |
+
+###### Loading Process
+*Sidenote:*
+	*ELF files extend the header in the address space trick used in QMAGIC a.out (file headers considered logically part of `.text` segment, code begins immediately after headers, located in same physical disk page, by mapping this, load headers + beginning of text segment in single operation) files to make executable files as compact as possible at the cost of some unused space in the address space.* 
+
+Execution view segments are arranged such that all loadable sections are packed into their appropriate segments to minimise loading operations e.g., the mapped text segment consists of an ELF header, the program header, and read-only text.
+
+Executable files usually have all relocation done and all symbols resolved, except possibly symbols related to shared libraries which are resolved at runtime. 
+
+As described above a segment can start and end at arbitrary file offsets, but the virtual starting address is subject to the above constraint (`p_vaddr = (p_offset % p_align)`).
+
+File chunks are memory mapped, which involves the system reading the program header to map file pages associated with segments into the process' address space  according to `p_vaddr` and `p_memsz`, with appropriate permissions for mapped ranges of pags. For example, executable code and read-only data typically mapped as RO, but read/write data is mapped as copy-on-write.
+
+The bss section is logically contiguous with the end of the r/w sections in the data segment.
+
+
+
+
+
+
+
+
+Executable ELF files are typically linked to be loaded at fixed addresses, and relocation is thus unnecessary unless rely on PIC code or dynamic linking. 
+
+
+###### Base Address with Regard to loading process.
 ## Exercises (today)
 
 
