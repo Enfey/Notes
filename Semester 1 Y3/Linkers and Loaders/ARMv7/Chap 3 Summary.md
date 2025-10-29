@@ -318,14 +318,12 @@ May be overlap between contiguous segments on file, when mapped into process ima
 
 The BSS section holds uninitialised data that should be initialised to zero by the system when the program begins to run. Occupies memory(`SHF_ALLOC`) but uses no space in the file itself (`SHT_NOBITS`). BSS is logically contiguous with read/write section in data segment, begins immediately after last byte of initialised data.  Writable data segments typically mapped copy-on-write by OS. BSS is initialised when program starts, writes zeros to this segment, thus triggers COW system, making private copy of that page for the process, ensuring process can write data without corrupting the shared file-backed memory page used by other processes.
 
-#### ELF Shared Object
+## ELF Shared Object
 Contains all baggage of relocatable view and executable view of ELF file. Since intended to be run, must contain program header table. Since intended to be linked with other files, it holds relocation information, symbol tables, other data, defined according to section header table.
 
 Thus has ELF header, program header table, loadable segments(sections(unsure if coalesced yet - probably maintains view of both)), non-loadable information e.g., `.symtab` and section header table. Usually ordered like this.
 
-
-
-## ELF Shared Object(minimal detail)
 # ARM7TDMI 
+
 
 # Exercises
