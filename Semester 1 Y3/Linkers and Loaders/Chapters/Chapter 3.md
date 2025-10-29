@@ -399,25 +399,23 @@ typedef struct {
 
 Execution view segments are arranged such that all loadable sections are packed into their appropriate segments to minimise loading operations e.g., the mapped text segment consists of an ELF header, the program header, and read-only text.
 
-Executable files usually have all relocation done and all symbols resolved, except possibly symbols related to shared libraries which are resolved at runtime. 
+Executable files usually have all relocation done and all symbols resolved, except possibly symbols related to shared libraries which are resolved at runtime. Typically linked to load at fixed addresses, thus relocation unnecessary unless rely on PIC code or dynamic linking.
 
 As described above a segment can start and end at arbitrary file offsets, but the virtual starting address is subject to the above constraint (`p_vaddr = (p_offset % p_align)`).
 
-File chunks are memory mapped, which involves the system reading the program header to map file pages associated with segments into the process' address space  according to `p_vaddr` and `p_memsz`, with appropriate permissions for mapped ranges of pags. For example, executable code and read-only data typically mapped as RO, but read/write data is mapped as copy-on-write.
+File chunks are memory mapped, which involves the system reading the program header to map file pages associated with segments into the process' address space  according to `p_vaddr` and `p_memsz`, with appropriate permissions for mapped ranges of pages. For example, executable code and read-only data typically mapped as RO, but read/write data is mapped as copy-on-write.
 
-The bss section is logically contiguous with the end of the r/w sections in the data segment.
+![[Pasted image 20251028185754.png]]
+There may be overlap between the contiguous segments on file, when mapped into process image, to save space and preserve alignment e.g., map .rodata section if small into last .text segment page prior to load by assigning p_vaddr that reflect this.
 
+The BSS section holds uninitialised data that should be initialised to zero by the system when the program begins to run. Occupies memory(`SHF_ALLOC`) but uses no space in the file itself (`SHT_NOBITS`). BSS is logically contiguous with read/write section in data segment, begins immediately after last byte of initialised data.  Writable data segments typically mapped copy-on-write by OS. BSS is initialised when program starts, writes zeros to this segment, thus triggers COW system, making private copy of that page for the process, ensuring process can write data without corrupting the shared file-backed memory page used by other processes.
 
+#### ELF Shared Object
+Contains all baggage of relocatable view and executable view of ELF file. Since intended to be run, must contain program header table. Since intended to be linked with other files, it holds relocation information, symbol tables, other data, defined according to section header table.
 
+Thus has ELF header, program header table, loadable segments(sections(unsure if coalesced yet - probably maintains view of both)), non-loadable information e.g., `.symtab` and section header table. Usually ordered like this.
 
-
-
-
-
-Executable ELF files are typically linked to be loaded at fixed addresses, and relocation is thus unnecessary unless rely on PIC code or dynamic linking. 
-
-
-###### Base Address with Regard to loading process.
+### 
 ## Exercises (today)
 
 

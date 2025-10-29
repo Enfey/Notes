@@ -9,12 +9,21 @@ A good representation should
 - Handle **context** - meaning changes according to context.
 
 ## Bag-of-Words (BoW) Representation
-Use a vector space model to represent text, such that the vector space has $V$ dimensions, where $V$ is the vocabulary size. A document is represented as vector in that space where $d_i = [w_1, w_2,..., w_v]$ where $w_j$ is the weight of word $j$in document $i$. ![[Pasted image 20251013214025.png]]
+Use a **vector space model** to represent text, such that the vector space has $V$ dimensions, where $V$ is the vocabulary size. A document is represented as vector in that space where $d_i = [w_1, w_2,..., w_v]$ where $w_j$ is the weight of word $j$ in document $i$. ![[Pasted image 20251013214025.png]]
 
 The Bag-of-Words model transforms a text corpus into a **document-term matrix** $X \in R^{D\times V}$ where:
 - $D$ is the number of documents
 - $V$ is the vocabulary size
-- $X_{ij}$ is the frequency of a word $j$ in a document $i$ 
+- $x_{ij}$ is the frequency of a word $j$ in a document $i$ 
+$$
+X =
+\begin{bmatrix}
+x_{11} & x_{12} & \cdots & x_{1V} \\
+x_{21} & x_{22} & \cdots & x_{2V} \\
+\vdots & \vdots & \ddots & \vdots \\
+x_{D1} & x_{D2} & \cdots & x_{DV}
+\end{bmatrix}
+$$
 
 #### Distance in Vector space
 - How far apart two vectors are, low value $\to$ more similar
@@ -27,8 +36,10 @@ The Bag-of-Words model transforms a text corpus into a **document-term matrix** 
 - Cosine Similiarity
 	Measures the angle between vectors, not their magnitude. Two docs are similar if point in same direction, even if one is longer.
 	$cosine_{sim}(A^{\to}B^{\to}) = \frac {A^{\to} \cdot B^{\to}} {|| A^{\to}|| \ \ ||B^{\to}||}$
+	Measures from -1 to 1, 1 is identical direction, 0 is no shared terms -1 is opposite direction.
 
-Given a document $d$, each dimension of that vector is computed from the frquency of the corresponding terms in that document. Using raw frequency to weight each term has problems. Large documents end up distant from short documents, even if they are similar. We apply weighting functions to avoid this.
+#### Weighting functions
+Given a document $d$, each dimension of that vector is computed from the frequency of the corresponding terms in that document. Using raw frequency to weight each term has problems. Large documents end up distant from short documents, even if they are similar. We apply **weighting functions** to avoid this.
 
 The main functions are:
 - **Binary weighting** - $weight(t,d) = \Bigg\{ 1 \ \text{if t} \in d, 0 \ otherwise$ 
@@ -75,7 +86,7 @@ By defining a context window of size $n$ for a target word $w_t$, a model can le
 	With a context window of size 2:
 		Context for "sat" = {"The", "cat", "on", "the"}
 		Context for "mat" = {"on", "the"}
-Although there are numerous ways to compute embeddings other than this, the context window is rather universal.**GloVe** combines co-occurrence matrices with local context window learning.
+Although there are numerous ways to compute embeddings other than this, the context window is rather universal. **GloVe** combines co-occurrence matrices with local context window learning.
 ![[Pasted image 20251014003808.png]]
 
 #### Word2Vec
