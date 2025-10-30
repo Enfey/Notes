@@ -324,6 +324,81 @@ Contains all baggage of relocatable view and executable view of ELF file. Since 
 Thus has ELF header, program header table, loadable segments(sections(unsure if coalesced yet - probably maintains view of both)), non-loadable information e.g., `.symtab` and section header table. Usually ordered like this.
 
 # ARM7TDMI 
+The ARM7TDMI architecture imposes specific restrictions on the processing i.e., linking and loading of ELF object files. In $*nix$ environments such as $NetBSD$ and $Linux$, special requirements concerning instruction set support, addressing constraints, alignment, so on and so forth must be reflected in the ELF structures used by linkers and loaders.
+
+## ELF Header
+`Elf32_Ehdr ` modified according to architecture.
+The  `e_machine ` member must specify  `EM_ARM(decimal 40)` to identify required architecture. 
+
+ARM7TDMI is a 32 bit microprocessor must reflect this by setting:
+	`e_ident[EI_CLASS] ` to  `ELFCLASS32 `
+
+ARM7TDMI is bi-endian, swapped according to hardware signal  `BIGEND`, according to whether this signal is high or low, words in memory are treated as Little endian or Big Endian, respectively. The ELF format is designed to be decodable regardless of target endianness due to  `e_ident[16]`.  `e_ident[EI_DATA] ` is set to  `ELFDATA2LSB ` when the target is set to  `little-endian` or  `ELFDATA2MSB` if the target is big-endian. Parsed to determine how to interpret rest of header.
+## Linking and Relocation
+ARM7TDMI implements both 32 bit ARM instruction set and the 16 bit Thumb instruction set. 
+
+ELF relocation entries must account for this in the type of relocation implied; relocation types are thus instruction set specific with respect to Thumb and ARM modes.
+
+ELF notes two sorts of relocation directives, `Elf32_Rel` and`Elf32_Rela`, each residing in the corresponding `.rel{name}` and `rela{name}` sections at link time, respectively. 
+
+In the `r_info` member of the `Elf32_Rel/a` structures, the relocation type implied by the relocation entry is designated. ARM specifies a set of processor relocation types that can be used. 
+![[Pasted image 20251030121933.png]]
+Fields being relocated, especially those concerning instructions and data, must conform to alignment rules. ARM instructions are aligned to 4 bytes, and Thumb instructions are 2 byte aligned. Where the relocation action is applied `r_offset`, fields of 8, 16, and 32 bits are aligned on 1, 2, and 4 byte boundaries, respectively. 
+
+$A$  denotes the addend
+$P$ denotes the place(offset)
+$S$ denotes the value of the symbol whose index is given in `r_info`
+
+For example, type 1, `R_ARM_PC24` is used for 32 bit branch or branch with link instructions, where the offset is typically PC relative. 
+
+The offset would point to the start of the branch instruction, the info would contain the symbol index, and the relocation type `R_ARM_PC24`. We are to relocate the address field in this instruction, via $S-P + A$, yielding a byte offset which is stored in the instruction as a signed offset, which is then right shifted to be divided into a word offset, and placed into the 24 bit field. The necessary pipeline adjustment (often +8 bytes) in ARM state is often factored into the final encoded offset value by the hardware at runtime. If the calculated offset exceeds the range representable by the 24 bit address field, the relocation will fail.  
+
+A 32-bit word commonly requiring relocation is a **data** pointer or address constant stored within the `.data` section, which is typically handled by the relocation type `R_ARM_ABS32`. This process patches the 32 bit memory location with the calculated absolute virtual address (S+A) of a referenced symbol, ensuring the pointer accurately points to the symbol's final location. 
+
+A thumb state relocation can get slightly more complicated. 
+`R_ARM_THM_PC22` is a relocation type targeting a thumb long branch with link `BL`. This operation consists of two consecutive 16 bit instructions. Thumb instructions are obviously constrained by their size, thus to address a distant target, the full bit offset (22 bits) is split across both instruction words. The linker computation (S - P+A) determines total offset needed, but the application of the relocation requires extracting the 11 most significant bits and encoding them into bits 0-10 of the first instruction word, and encoding the least 11 significant bits into bits 0-10 of the next instruction word in the pair. 
+
+A literal pool is a block of constants embedded in .text used by ARM and Thumb instructions that can only load PC-relative data. 
+ARM's `LDR Rd, [PC, #imm12]` can reach roughly -/+4KB (byte offsets in PC relative addressing instructions). Thus the constant must be stored closed to the constant if too large to fit in the offset. 
+
+
+One must implement veneer generation, a trampoline stub inserted when a branch cannot reach its target and in other situations. 
+
+    BL far_function
+
+    BL veneer_for_far_function
+    veneer_for_far_function:
+    LDR pc, =far_function
+Linker may also generate veneer if object A (arm) calls object B(thumb), executes BX target with correct low bit set, since a plain BL cannot change mode. 
+
+
+
+### Specific Constraints
+The ARM ELF consumer does not need to interpret the instruction word to determine how to relocate it; the required subfield and unit of relocation evident from relocation entry and relocation type. 
+
+Multiple relocation of a field is possible, but should not be exploited to generate a compound relocation at link-time as an intermediate step may overflow, cannot clip the result either, less the semantics of the program will be violated.
+
+
+## Loading and Alignment and Memory protection
+Enforces alignment for all memory accesses at hardware level, which translates into constraints enforced by ELF files & section headers.
+
+Words aligned to 4 bytes, halfwords aligned to 2 bytes, byte quantities on any byte boundaries. 
+
+Sections are configured accordingly in `Elf32_Shdr`. `sh_addralign` must be a positive integral power of two for sections containing loadable(`SHF_ALLOC`). The sections virtual address must be congruent to 0, modulo the alignment value. 
+
+For statically linked ARM executables, the program header describes segments where the alignment must be a power of 2 greater than or equal to 4, as all ARM and Thumb segments are at least word-aligned. 
+
+Configure instruction and data fetching via the $MAS[1:0]$ bus. ARM state signals word accesses, Thumb state signals halfword accesses, $TBIT$ signals operating state. 
+
+The Thumb mode bit handling is a critical interoperability point. The LSB of a function pointer at runtime is often used to indicate Thumb state when branching via registers; this LSB is best maintained accordingly in `st_value`, and ensure it is preserved during relocations. 
+## Symbol management
+`.symtab` or `.dynsm` consist of `Elf32_Sym` entries. `st_value` holds the value of associated symbol, either virtual address or section offset.
+`st_info` provides symbol classification i.e., type, and linkage visibility (binding). 
+	type = symbols typically classified as data object `STT_OBJECT` or a function `STT_FUNC`.
+	binding = visibility, `STB_LOCAL`, `STB_GLOBAL`, or `STB_WEAK` representing global symbols with lower definition precedence to global.
+Index 0 designates the undefined symbol index. Relocation entries refer to a symbol table index to retrieve `st_value`, if this index is `STN_UNDEF(0)` then the relocation uses 0 as the symbol value. 
+`st_size` gives the size of the associated symbol. 
+
 
 
 # Exercises
