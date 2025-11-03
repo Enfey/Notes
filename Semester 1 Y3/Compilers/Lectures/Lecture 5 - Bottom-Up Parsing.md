@@ -9,6 +9,7 @@ To build a derivation from the lower fringe leaves, adds layers of nonterminals 
 To extend the frontier upward, looks in current frontier for a substring that matches the right-hand side of some production $A \to \beta$ . If it finds $\beta$ in the frontier, with its right end at $k$ , can replace $\beta$ with $A$, to create a new frontier.
 
 A handle is a pair of a production rule and an index into a sentential form. 
+
 $[A \to \beta ,k]$, means the first $k$ tokens of $\gamma_i$ form $\beta$ and can be replaced with $A$ in $\gamma_{i-1}$. (the part of the string you reduce at each reduction is the handle).
  
 This replacement is called a **reduction**, because it reduces the number of symbols on the frontier, unless cardinality of $\beta$ is 1. If the parser is building a tree, it builds a node for $A$, adds that node to the tree, connects the nodes representing $\beta$ as $A's$ children.

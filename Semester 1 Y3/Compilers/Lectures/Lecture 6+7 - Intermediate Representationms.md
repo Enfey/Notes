@@ -63,7 +63,7 @@ Referenced very frequently during linking and code generation e.g., alignment, c
 ![[Pasted image 20251022160102.png]]
 
 ### Namespaces
-Container that holds set of identifiers and allows compiler to distinguish between identical names in different contexts. Each procedure typically creates a new, protected name space, insulating local declarations from the surrounding context. Typically during parsing, scope is recorded.
+Container that holds set of identifiers and allows compiler to distinguish between identical names in different contexts. Each procedure typically creates a new, protected name space, insulating local declarations from the surrounding context. Typically during parsing/CSA, scope is recorded.
 
 Lexical scope, scopes nest in the order they are encountered in the program text. A name refers to the definition that is lexically closest to its use - the definition in the closest surrounding scope. 
 
