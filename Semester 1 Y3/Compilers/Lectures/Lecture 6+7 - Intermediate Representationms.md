@@ -123,4 +123,4 @@ Dominance frontiers define the points at which $\phi$ functions are needed, if c
 Variables are systematically renamed using a DFS of the dominator tree. Algorithm uses a stack and counter for each base name to track most recently defined SSA name, ensuring that every use refers to single definition.
 
 ## Call Graph 
-Graphical representation used for interprocedural analysis and optimisation. 
+Graphical representation used for interprocedural analysis and optimisation. Control-flow graph representing calling relationships between procedures. Each node represents a procedure and each edge $f, g$ indicates that procedure $f$ calls procedure $g$. Thus a cycle indicates recursive calls. 
