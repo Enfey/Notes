@@ -339,5 +339,57 @@ Could also use some sort of semantic resource such as dictionary or an ontology 
 Finally, something to keep in mind is that whatever adding to query should not take over from what the user entered. Good practice to apply some weighting function to make sure original terms are never complete overridden by expanded terms.
 
 ### Retrieval and Question Answering
-Information retrieval offers great framework for question answering systems.
+Information retrieval offers great framework for question answering systems. Given a pre-existing corpus of Question-Answer pairs, a retrieval system would only need match a new question to existing questions in order to retrieve the most likely correct answer.
+
+Designing a system in this way raises several interesting questions. How does one know whether the right question-answer pair has been matched? How is user input pre-processed as to not destroy its semantics? How can the system learn and improve? 
+![[Pasted image 20251105084811.png]]
+Several design decisions such as how to handle failure states, how to handle uncertainty, how to preprocess and index the data, are designed on a case by case basis by implementer.
 ### Evaluating Search Results
+How does one know if the search algorithm is good? There are several metrics used in information retrieval that give an idea of whether a search engine is successful. 
+We will use three of these: **Precision. Recall, Normalised Discounted Cumulative Gain(NDCG)**
+
+#### Human Assessment of relevance
+We measure the quality of a search engine based on a set of reference queries for which we know the expected results. The results can either be binary, or graded. In the former, relevance is encoded as 0 or 1, in the latter case relevance is encoded as a number from 0 to 2. 
+
+A sample query would be represented as $$q_1 = \{d_{1} : 2, d_{5} : 2, d_{6}, : 2, d_{7}, d_{8} : 1\}$$ with the implicit assumption that it is 0 for all other documents. Knowing this, can then compute several metrics
+
+#### Precision
+Precision $@$ $K$ is concerned with how many of the returned $K$ documents are relevant. Focuses on only the top $K$ results, for example the first page of search results, as don't want this to be polluted with irrelevant documents. Usually evaluated with binary judgements, with no grading of relevance
+$$Precision = \frac{|\{relevant documents\} \cap \{retrieved documents\}| }{|\{retrieved documents\}|}$$
+E.g., 5 documents returned, 3 are relevant and retrieved, precision = $\frac{3}{5} = 0.6$
+If we only wanted to consider the top 3 results, would filter, reduce both as necessary and recalculate. Tells how accurate retrieved results are.
+
+
+#### Recall
+Recall $@$ $K$ is concerned with how many of the relevant documents have been retrieved. Like precision, it is common to plot recall with multiple $K$ values to see how the results of algorithms change as more results are returned. Makes sense in small, specialised search engines where only a restricted set of documents in deemed relevant and coverage is considered most important. 
+
+$$\frac{|\{relevant \ documents\} \cap \{retrieved \ documents\}|} {|\{relevant \ documents\}|}$$
+Relevant across the whole collection, regardless of whether retrieved. Tells how complete results are. 
+
+
+#### Normalised Discounted Cumulative Gain(NDCG)
+Normalised Discounted Cumulative Gain (NDCG) $@$ $p$ is a way to evalute search results in a more fine-grained way; precision and recall treat relevance as binary, this supports graded relevance. 
+
+We sum up the relevance scores of the top $P$ results
+$$CG@P=\sum_{i=1}^{P}rel_{i}$$
+Then discount lower ranks logarithmically
+$$DCG@P\sum_{i=1}^{P}\frac{2^{rel_{i}}-1}{\log_{2}(i+1)}$$
+Designed to reward systems that place relevant documents earlier, and penalise systems that bury them lower in the ranking
+
+We compute the best possible DCG i.e., the DCG if we had ranked all relevant documents perfectly.
+$$IDCG@K = DGC@K$$
+To make results comparable across queries or systems, we divide the actual $DCG$ by the ideal $DCG$
+$$DGC@K = \frac{DGC@K}{IDCG@K}$$
+#### Evaluation Campaigns
+Organised competitions, research groups test their search or ranking algorithms on shared datasets used shared evaluation metrics. To evaluate a search engine, one must know which documents are relevant to each query. But when dealing with billions of documents, cannot manually label all of them. Use a shortcut called pooling:
+1. Each search system runs a fixed set of queries called evaluation topics, each system returns the top $N$ results for each query. 
+2. A central authority takes the union of all documents returned during that search
+3. The union is randomly split and assigned for labelling
+4. Each participant receives a subset of the pool and labels each document as relevant, partially relevant, not relevant
+5. After labelling, all judgments are aggregated so that each document gets a final, consensus based relevance label.
+
+### Advanced Models
+Bag of words and such are powerful, but have a fundamental limitation: they disregard word order and context. For these models, the sentences "The user queried the search engine" and "The search engine queried the user" are represented identically, as they contain the same set of words. The inability to capture syntax and semantics is worrying. Modern deep learning models aim to overcome this.
+
+#### BERT
+Stands for Bidirectional Encoder Representations from Transformers, processes text in a way that is fundamentally different from classic BoW methods. Reads the entire sequence on words in one step, this bidirectional context allow it to generate a unique representation for a word based on the words that appear both before and after it. For example, BERT would generate different vectors for the word "Bank" in the phrases "the river bank" and "the savings bank". The output of a BERT model is a dense vector, often called an embedding, of a fixed size. 
