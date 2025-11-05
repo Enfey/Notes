@@ -11,7 +11,7 @@ In compilers, a type lets us know how different values behave and directly descr
 The fundamental relationship between a program term and its classification is via the **typing judgement** $e : τ$. This is a two-place infix relation defined by **Type Rules** which formally assert the validity of judgements based on premises. 
 
 The judgment is necessarily extended to include a **Context**, resulting in the structure:$$Γ⊢e:τ$$
-The context in our case is the static typing environment, typically an ordered list of distinct variables and their corresponding types, such that the variables are known during the typing judgement. 
+The context in our case is the static typing environment, typically an ordered list of distinct variables and their corresponding types, such that the variables are known during the typing judgement. In practice, context is realised as the variables that are currently in scope together with the types the type checker knows for them.
 
 The validity of a judgement is established through **type rules**, which fit within the framework of formal proof systems. 
 
@@ -98,6 +98,36 @@ Historically, two approaches have been used to define type equivalence:
 	This policy asserts that two types are equivalent if and only if they they have the same internal structure, regardless of syntactic convention. Requires that types consist of the same set of fields, in the same order, with those fields all having equivalent types. If a type system leverages this, the compiler must encode the type's structure to facilitate equivalence testing during semantic elaboration. Equivalence relation on types can be then computed recursively. 
 In practice, a mixture of structural and by-name equivalence is used in most languages. 
 ### Type inference
+> Type inference rules are the formal logical rules that tell us how to derive the type of an expression. 
 
+Each rule, as seen prior, maintains the form $$\frac{premises}{conclusion}\text{Rule Name}$$They define what it means to say $\Gamma \vdash e : \tau$. 
+
+A compiler uses these inference rules to calculate the type of every expression in the program. For example, if $e_1$ has type $int$ and $e_2$ also has type $int$, w know that $e_1 + e_2$ must also have type $int$. We write this as an **inference rule**:
+$$\frac{ \Gamma \vdash e_{1} : int \ \ \ \Gamma \vdash e_{2} : int}{\Gamma \vdash e_1+e_{2} : int}$$
+We can produce more of these!
+
+*T-Var*
+$$\frac{x:\tau \in \Gamma}{\Gamma \vdash x : \tau}$$
+>A variable's type is whatever the context declares it to be.
+
+*Function abstraction:*
+$$\frac{\Gamma, x : \tau_{1} \vdash e : \tau_{2}}{\Gamma \vdash (\lambda x.e) : \tau_{1} \to \tau_{2} }$$
+
+
+*Function application*
+$$\frac{\Gamma \vdash e_{1} : \tau_{1} \to \tau_{2} \ \ \ \Gamma \vdash e_{2} : \tau_{1}}{\Gamma \vdash e_{1} \ e_{2} : \tau_{2}}$$
+
+For example, we can infer the type of $\lambda x.x$ 
+We start with an unknown type for $x$, et us say $\alpha$.
+Via $T-Var$ we can conclude that the type for $x$ is whatever the context says it is - $\Gamma, x : \alpha \vdash x : a$ 
+Via Function Abstraction we can infer that $\lambda x.x : \forall a.a \to a$, via $\Gamma \vdash \lambda x.x : \alpha \to \alpha$ 
+
+To perform type inference, first must calculate the types of the arguments, and then look for an inference rule that matches. 
 ### Type promotion
-> Type promotion, formally referred to as **implicit conversion**, occurs when a programming language specifies rules that permit an operator. 
+> Type promotion, formally referred to as **implicit conversion**, occurs when a language automatically converts one type into another compatible type.
+
+When dealing with mixed type expressions that would otherwise fail, the compiler is at liberty to insert conversion code, typically converting one or both operands to a more general type. This is more common in weakly typed languages. 
+
+This often involves coercing the less precise value to the form of the more precise/compatible type before executing the operation. The most common example of this is with numeric promotion. 
+
+There are many possible ways to achieve type promotion, for example producing promotion rules in the type system for different types, which we can refer to as subtyping. 

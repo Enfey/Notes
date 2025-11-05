@@ -82,7 +82,7 @@ To coalesce input sections from ELF objects such that a coalesced ELF object can
 	Determine access flags (RWX)
 	Determine alignment requirement `sh_addralign` and size
 	Determine whether loaded from file or can be zeroed in memory e.g., `.bss`
-3. Form permission groups
+3. Form permission groups/segments(`PT_LOADS`)
 	This is the initial grouping via *page permissions* according to headers:
 	- Read+Execute - usually `.text`
 	- Read Only - `.rodata`
