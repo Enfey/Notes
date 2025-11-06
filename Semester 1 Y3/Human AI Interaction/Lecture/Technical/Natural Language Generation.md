@@ -45,4 +45,24 @@ Thus, it is the prepare result stage - turning structured intent or data into a 
 	*Orphographic realisation* - Apply punctuation and capitalisation
 
 ## Statistical Language Models
-Before neural models, NLG used $n-gram$ probability models. Given a sequence of tokens, predict the next token. 
+Before neural models, NLG used $n-gram$ probability models. Given a sequence of tokens, predict the next token. It assigns a probability to a sequence of words, and it helps decide what sounds natural in a language. 
+
+For example, have two possible sentences
+$P(\text{Nature is healing})$
+$P(\text{Nature is killing})$
+
+A good language model will assign $$P(\text{Nature is healing}) > P(\text{Nature is killing})$$
+Before neural networks, language models were built on statistics from word counts. The probability of a whole sentence
+$P(w_1, w_2, w_3,...w_n) = P(w_1) \times P(w_2∣w_1) \times P(w_3∣w_1, w_2) \times \dots \times P$ 
+Impossible to compute directly. Aka:
+$$\prod_iP(w_i ∣w_1, w_2 \dots w_{i-1})$$
+We simplify this such that each word depends only on last few words, not entire sentence,
+$P(w_i∣w_{i-n+1}, \dots w_{i-1})$ 
+Each word $i$ depends only on a restricted set of preceding words. 
+![[Pasted image 20251105212759.png]]
+
+## Neural Language models
+Moved from counting to computing. Each word is turned into an embedding, words with simiarl meanings have similar vectors, these vectors fed into a neural network, which learn to predict the probability of the next word. Use millions of trainable parameters to work with variable-sized contextual information. Very difficult to encode a communication goal. 
+
+
+
