@@ -99,15 +99,15 @@ We use this to construct an entry into an ELF input representation semi-equivale
 #include <stdint.h>
 
 typedef struct Relocation {
-	uint64_t offset;
-	uint32_t type;
+	uint64_t        offset;
+	uint32_t        type;
 	struct Symbol * symbol;
-	int64_t addend; //rela
+	int64_t          addend; //rela
 } Relocation;
 
 typedef struct Symbol {
 	char *name;
-	struct InputSection *section;
+	struct InputSection    *section;
 	uint64_t value; //offset within section
 	uint8_t size;
 	uint8_t binding; 
@@ -116,12 +116,12 @@ typedef struct Symbol {
 } Symbol;
 
 typedef struct InputSection {
-	char          *name;
-	uint8_t       *data; //pointer to section contents 
-	uint64_t      size;
-	uint64_t      alignment;
-	Relocation    *relocs;
-	uint32_t      num_relocs;
+	char *name;
+	uint8_t *data; //pointer to section contents 
+	uint64_t size;
+	uint64_t alignment;
+	Relocation *relocs;
+	uint32_t num_relocs;
 	uint32_t flags;
     uint32_t type;
     
