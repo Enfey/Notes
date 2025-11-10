@@ -176,10 +176,19 @@ typedef struct InputFile {
 	- Look up in the global symbol table.
 	- If found
 		- Update symbol `symbol -> section` and `symbol->value` to point to the defining section and offset
+			- A stronger solution would be to create a resolved field and set it to point to the global symbol.
 	- If not found
 		- If using a library, scan it for object files defining the symbol, parse it into `InputFile` and repeat
 	- Else, report linker error: undefined symbol.
-3. Update relocation entries
+3. Update relocation entries to point to entries in global symbol table, rather than local entries. One method to do this via the resolved field may be `reloc->symbol = reloc->symbol->resolved->definition`
+	```c
+           typedef struct GlobalSymbol {
+               char *name;
+               struct Symbol *definition;  //pointer to def 
+               struct Symbol **references; //optional
+               uint32_t num_refs;
+           } GlobalSymbol;
+           ```
 #### Storage Allocation
 Classify sections by runtime properties
 	Determine `SHF_ALLOC`
@@ -211,16 +220,135 @@ Classify sections by runtime properties
 Just write final `ET_EXEC` ELF output now.
 
 
-#### Writing final ELF output
 
 ## Global Symbol Table
+The linker may opt to keep a global symbol table internally, which keeps an entry for every global symbol referenced or defined in any input file. When the linker reads input files, it extracts global symbols and adds them to this master table. This process is usually managed using a hash function and chained lists to locate entries quickly.
 
-## Symbol Resolution
+```c
+struct glosym {
+	struct glosym *link;
+	char *name; // actual string name
+	long value; // aligned relative address to the start of the section
+	struct nlist *refs; // linked list of entries in local symbol tables where symbol appears as definition or ref
+	int max_common_size; // common blocks
+	char defined;
+	char referenced; 
+	unsigned char multiply_defined; // handle multiple defs
+}
+```
+
+For each input file:
+- The linker reads its symbol table
+- For each symbol
+	- Look up its name in the global symbol table
+		- If not found -> create a new `glosym` entry
+	- Add this module's reference/definition to the symbol's refs chain
+
+As symbols are added:
+- If the symbol is defined in a file, `defined = 1`
+- if the symbol is referenced, mark `referenced = 1`
+- If the symbol is defined in multiple files, set `multiply_defined = 1`
+- Every symbol appears once in the global table now, and has list of all occurrences
+
+Each module's relocation records refer to symbols by local symbol table index. The linker must construct a vector of pointers for each module. As in, each entry in the module's local symbol table is replaced with a pointer to the corresponding global symbol table entry. 
+
+Now when the linker encounters a **relocation**, it can just follow the `glosym` pointer and use its `value` field in the relocation. It is also free to further view its references linearly if need be. We do not manipulate any bytes in sections yet, we just merely construct the structures that permit our relocations to work globally post storage allocation. 
+
 
 ## Special Symbols
+The names used in object file symbol tables and in linking are often not the same names used in the source programs from which the object files were derived.
+
+There are three reasons for this:
+1. Avoiding name collisions
+2. Name overloading(same name, different parameters)
+3. Type checking
+The process of turning source program names into object file names is called **name mangling**, a technique derived from the need to resolve unique names for programming entities. 
+
+### Name Mangling
+In older object formats, compilers used names from the source program directly as the names in the object file, perhaps truncating long names. Problems occurred as a result of collisions with names reserved by compilers and libraries.
+
+`CALL MAIN`
+`END`
+Would crash, on OS/360 systems, the programming convention was that every routine including the main program has a name, and the name of the main program is called `MAIN`. The system routine that started Fortran programs was also called `MAIN` and this led to a recursion and a crash. People learned to not use *reserved* names but this was fragile. 
+
+The approach taken on early UNIX systems was to mangle the names of procedures so they wouldn't collide with the names of libraries and other routines. C procedure names were modified with a leading underscore such that `main` became `_main`. 
+	The reason the name mangling approach was chosen rather than using collision-proof library names e.g., `$printf` was simply due to convenience, as the assembler language libraries were already extensive by the time UNIX was rewritten in C, was easier to mangle names of new C and C-Compatible routines. 
+
+Name mangling in C is no longer needed as  ELF provides a more structured symbol table that stores rich metadata such as binding(local, global, weak), type, and visibility. Older formats like `a.out` had limited or truncated symbol names, requiring compilers to encode extra info into the symbol name itself. Since C has no overloading, each external identifier is already unique at link time, as such can resolve symbols directly using their literal names. Even main is just linked to `crt1.o` which simply declares a reference to `main` which the linker resolves to the user's main definition exactly as it would any other global function. 
+
+Collisions with libraries(static) are handled via only pulling in object files from a library is they resolve an undefined symbol currently in the global symbol table. 
+
+#### Name Mangling in C++
+ C++ supports features that C does not, including:
+- Templates(generics)
+- Function overloading
+- Classes and member functions
+- Namespaces
+Because of this, the simple symbol name in the object file is not enough to uniquely identify a function or method.
+
+E.g., 
+```C++
+void print(int);
+void print(double);
+```
+While perfectly valid code, at the linker level without mangling this would result in a name collision, and for 1 global symbol this would result in 2 strong definitions and a linker error. 
+
+Many names are mangled in C++ to preserve semantics, although, as linker authors we are generally only concerned with global/weak symbols that are mangled to preserve uniqueness and avoid collision to ensure correct name resolution.
+
+Variables names outside of C++ classes are not mangled at all. 
+
+Function names not associated with classes are mangled to encode the types of the arguments by appending `__F` and a string of letters that represent the argument types and type modifiers. For example, a function:
+```C++
+func(float, int, unsigned char) -> func__FfiUc
+```
+
+Class names are considered types and are encoded as the length of the class name followed by the name, such as `4Pair`. When a class name includes internal classes across multiple levels (a 'qualified' name) it is encoded starting with the letter `Q`, followed by a digit indicating the number of levels, followed by the encoded class names. For example, the name `First::Second::Third` becomes `Q35First6Second5Third`.
+A function signature uses this encoding to represent its argument types; a function `f(Pair, First::Second::Third)` becomes `f__F4PairQ35First6Second5Third`. The notation `__F` indicates the function arguments begin, followed by the type encodings for `Pair` and `First::Second::Third` respectively.
+
+Class member functions are encoded as the function name, two underscores, the encoded class name, then F and the arguments. So `cl::fn(void)` becomes `fn__2clFv`. Special functions including constructor, destructor, new, and delete all have encodings too. 
+
+Since mangled names can be so long, there are two shortcut encodings for functions with multiple arguments of the same type. The code `Tn` means same type as the `nth` argument. and `Nnm` means `n` arguments of the type as the `mth` argument. A function `segment(Pair, Pair)` would be `segment__F4PairT1` and a function `trapezoid(Pair, Pair, Pair, Pair)` would be `trapezoid__F4PairN31` (non-member functions).
+
+#### Link-Time Type Checking With Mangled Names
+The process by which a linker enforces type checking across modules via type info encoded in mangled names.
+
+When one object files calls a function defined in another, the call refers to the mangled symbol for that function signature. The linker matches undefined references against defined symbols by their mangled names.
+If a mangled name is produced in an object file and a definition cannot be found for it that matches the type string for the reference, an error is reported. Thus mangled names act as link-time type signatures enforcing strong typing across modules. 
 
 
+### Weak External and other kinds of symbols
+Up to this point, considered all linker global symbols to present themselves as either a definition or a reference to a symbol. Object formats such as ELF can qualify a reference as weak or strong.
 
-# Symbol Tables in ELF
+There are three main symbol bindings in ELF. The ELF specification says:
+- `STB_LOCAL`
+	Have a value of 0, defined by the rule that they are not visible outside the object file containing their definition. Local symbols with the same name can exist across multiple files without creating conflicts. All entries with `STB_LOCAL` binding are placed before `STB_GLOBAL` and `STB_WEAK` entries. To facilitate this distinction, a symbol table section's `sh_info` section header member holds the symbol table index for the first non-local symbol. 
+- `STB_GLOBAL`
+	- Global symbols have a value of 1, they are visible to all object files being linked. Link editors do not permit multiple definitions of `STB_GLOBAL` symbols, and throw a linking error if there is. The primary linking rule for global symbols is that one file's definition of a global symbol satisfies another files undefined reference to that same symbol.
+- `STB_WEAK`
+	- Weak symbols have a value of 2. They resemble global symbols but their definitions carry a lower precedence. 
+	- If defined global symbol exists with the same name as a weak symbol, the linker editor honours the global definition and ignores the weak one. The presence of a weak symbol does not cause an error. 
+	- If a weak symbol is referenced but undefined i.e., it is a weak reference where `st_shndx` is `SHN_UNDEF`, the link editor does not extract archive members. Such unresolved weak symbols are typically given a zero value. 
+	- Weak symbols allow linking to proceed without error even if a reference remains unsatisfied. They can be employed to provide fallback/default definitions e.g., library files which can be overridden by other files.
+	- Compilers like GCC and clang support marking a symbol weak using `__attribute__((weak))` or `#pragma weak symbol`.
+
+
+### Maintaining Debugging Information
+Modern compilers support source language debugging, can debug object code by referring to source program function and variable names. compilers support this by putting information in the object file that provides a mapping from source line numbers to object code addresses as well as information that describes all of the functions, variables, types, and structures used in the source program.
+
+#### Line Number Information
+To support breakpoints, single-stepping and stack tracebacks, compilers generate a mapping from program addresses to source line numbers. 
+
+Each line of generated code has a line number entry generated, giving the file scoped line number and the beginning address of the corresponding object code. If the program address lies between two line number entries, the debugger reports it as being the lower of the two line numbers. 
+
+DWARF lets the compiler map each byte of object code back to a source line, while other techniques may just specify approximate locations. 
+#### Symbol Information
+Compilers generate debug symbols describing the names, types, and locations variables, functions, and structures. Needs to encode type definitions so that debugger can correctly format all of the subfields in a structure or union. 
+
+The symbol information is an implicit or explicit tree, with top-level entries for types, functions, and variables, and nested entries for fields, local variables, and blocks. Special markers track variable scope and lifetime within function e.g., `begin block` and `end block` markers referring to line numbers allowing the debugger to identify what variables are in scope at each point in the program.
+
+Location information for symbols is complex, the location of a static variable is just a fixed memory address, local variables typically stack allocated and accessed at offset from frame pointer. If register allocated the debugger must know which register holds the variable at which instruction. In heavily optimising compilers, compiler may compute values on the fly or eliminate them; the debugger in this case can only approximate. 
+
+#### Practical issues
+
 
 
