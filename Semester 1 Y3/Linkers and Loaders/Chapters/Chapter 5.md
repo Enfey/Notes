@@ -98,6 +98,13 @@ We use this to construct an entry into an ELF input representation semi-equivale
 
 #include <stdint.h>
 
+typedef struct GlobalSymbol {
+    char *name;
+    Symbol *definition;          // points to resolved definition
+    Symbol **references;         // optional list of refs
+    uint32_t num_refs;
+} GlobalSymbol;
+
 typedef struct Relocation {
 	uint64_t        offset;
 	uint32_t        type;
@@ -167,28 +174,22 @@ typedef struct InputFile {
 	Store arrays of `InputSection*` and `Symbol*`
 	Store counts `num_sections` and `num_symbols`.
 #### Name Resolution
-1.  Build global symbol table (visible to all modules)
-	For each `Symbol`
-	- If `binding` is `STB_GLOBAL` or `STB_WEAK`, insert into global symbol table
-	- Undefined symbols are marked as needing resolution
+1. Build **GST** visible to all modules.
+	For each input `Symbol`:
+		If `binding` $\in$ `{STB_GLOBAL, STB_WEAK}` -> insert or update in GST
+		Mark undefined symbols are unresolved `definition == NULL`
 2. Resolve undefined symbols
-	For each undefined symbol in all `InputFile` s:
-	- Look up in the global symbol table.
-	- If found
-		- Update symbol `symbol -> section` and `symbol->value` to point to the defining section and offset
-			- A stronger solution would be to create a resolved field and set it to point to the global symbol.
-	- If not found
-		- If using a library, scan it for object files defining the symbol, parse it into `InputFile` and repeat
-	- Else, report linker error: undefined symbol.
-3. Update relocation entries to point to entries in global symbol table, rather than local entries. One method to do this via the resolved field may be `reloc->symbol = reloc->symbol->resolved->definition`
-	```c
-           typedef struct GlobalSymbol {
-               char *name;
-               struct Symbol *definition;  //pointer to def 
-               struct Symbol **references; //optional
-               uint32_t num_refs;
-           } GlobalSymbol;
-           ```
+	For each undefined symbol in all `InputFile`s:
+		Lookup by name in GST
+		If found and has definition
+			`symbol -> resolved = global_symbol`
+	If `resolved->definition == NULL` (i.e., could not find any resolution to the global symbol found from original linker input)
+		If libraries are available, search and load the defining object, updating the GST to complete the entry for the undefined global symbol. 
+	Else report linker error.
+3. Relocs
+	Redirect relocation entries to point to entries in global symbol table, rather than local entries. `reloc->symbol = reloc->symbol->resolved->definition` where `resolved != NULL`
+
+It should be noted that it is entirely valid to build a fully complete GST rather than mixing the completion of the GST with the resolution of names across modules. One may choose to add everything to the GST, then search libraries to resolve undefined symbols, and then resolve the symbols provided from the original linker input. Both methods are completely valid. 
 #### Storage Allocation
 Classify sections by runtime properties
 	Determine `SHF_ALLOC`
@@ -347,8 +348,6 @@ Compilers generate debug symbols describing the names, types, and locations vari
 The symbol information is an implicit or explicit tree, with top-level entries for types, functions, and variables, and nested entries for fields, local variables, and blocks. Special markers track variable scope and lifetime within function e.g., `begin block` and `end block` markers referring to line numbers allowing the debugger to identify what variables are in scope at each point in the program.
 
 Location information for symbols is complex, the location of a static variable is just a fixed memory address, local variables typically stack allocated and accessed at offset from frame pointer. If register allocated the debugger must know which register holds the variable at which instruction. In heavily optimising compilers, compiler may compute values on the fly or eliminate them; the debugger in this case can only approximate. 
-
-#### Practical issues
 
 
 

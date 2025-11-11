@@ -140,12 +140,70 @@ Modern ar variants support additional modes:
 
 
 ## Searching Libraries
+After a library has been created, the linker has to be able to search it. The searching of a library occurs after all input files have been processed, i.e., in the linker's first pass after constructing all internal data structures. Once the GST has been constructed (the exact implementation and contents are linker-dependent), the linker can determine unresolved global/weak symbols that remain. The linker must satisfy these by pulling in enough objects from library files. _Linker's extract only the object modules that resolve currently unresolved symbols_
 
+First, the linker must read the library index `/` || `/SYM64/`. This is then parsed into an in-memory data structure like so:
+```c
+typedef struct {
+    char *name;
+    uint32_t member_offset;
+} ArchiveIndexEntry;
+
+int nsymbols;
+
+ArchiveIndexEntry *archive = malloc(nsymbols * sizeof(ArchiveIndexEntry));
+```
+
+Then, for each symbol $S$ in the **GST**:
+	If $S$ is undefined
+	Check the library index for `S.name`
+	If found
+		Extract the corresponding member according to `member_offset`
+		Parse it as normal input file
+			Load its sections
+			Load its symbols
+			Add them into the `GST`
+		Iterate until stable
+Library searching is iterative as pulling in one member may introduce new undefined symbols which must then be resolved, often satisfied by other members in the same library. One iterates until a fixed point - no unresolved symbol can be satisfied by remaining members. 
+
+There are few things to note.
+1. First definition wins
+	When several members define the same symbol, the first pulled defines the final symbol, unless a weak definition is pulled and a strong symbol is later discovered.
+2. Circular dependencies
+	If a routine in library A depends on a routine in library B, but another routine in library B depends on a routine in library A, neither searching A followed by B nor B followed by A will find all of the required routines. Such dependencies get worse as the number of dependent libraries increases. One can direct the linker to repeatedly search, but this often requires foresight or trial and error and is not very elegant. The solution is to implement group semantics. The linker treats a contiguous range of libraries as a group and keeps scanning the group until no new members are pulled. (`--start-group / --end-group`)
+3. Ordering
+	The search order of libraries is according to the order in which the inputs appear. 
 
 ## Performance issues
 The primary peformance issue related to libraries used to be the time spent scanning libraries sequentially. Once symbol directories became standardised this was no longer an issue. Library searches can still be slow if a library has a lot of tiny members. Particularly in the now common case that all of the library members are combined at run time into a single shared library anyway, it'd probably be faster to create a single object file that defines all of the symbols in the library and to link using that rather than by searching a library. More on this in [[Chapter 9]].
 
 ## Weak External Symbols
+Early UNIX linkers maintained a rigid definition/reference model in that:
+- Every undefined symbol must be satisfied by a definition somewhere
+- Every symbol defined somewhere in a library pulls in the object that defines it
+This turned out to be insufficiently flexible for many applications. For example, most C programs call routines in the `printf` family to format some data for output. `printf` can format many kinds of data, including floating point. Linker-over eagerness was caused due to this model; even programs that didn't use floating point ended up linking in floating point libraries simply because `printf` *could* reference `fcvt`.
 
+Originally this was solved by ordering the library such that if the program used floating point, then it loaded the correct floating point libraries reducing unused dependencies. Brittle solution.
 
-## Linked Behaviour With Archive Files Factored In
+Weak references and definitions were introduced to solve this problem.
+
+### Weak References
+> An undefined symbol that does not trigger a library load, and is allowed to remain unresolved.
+
+If a real definition exists somewhere, the weak reference resolves to it. 
+If none exists, the linker leaves it undefined, typically resolved as zero at runtime. 
+It is not an error to leave a weak reference unresolved. 
+
+Thus in the above example, `printf` makes a weak reference to `fcvt`. The floating point code defines `fcvt`. If the floating point code is linked, the strong definition wins. If not, the weak reference stays unresolved and is not an error. 
+### Weak Definitions
+> A definition that only takes effect if no strong definition exists. 
+
+Less common, but are useful for providing fallbacks and providing an interface. 
+
+```c
+__attribute__((weak)) void error_handler() {
+	//default stub
+}
+```
+If another object file (either in library or in original linker input) provides a strong `error_handler`, that one overrides the weak one. If not, the stub version is used. 
+
