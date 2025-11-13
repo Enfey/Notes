@@ -28,7 +28,7 @@ To locate a symbol in the table:
 4. Compare names and other properties until a hash is found.
 
 ```C
-struct sym *symhash[NBUCKET]; //array of NBUCKET elements, each elem is pointer to a sym struct
+struct sym *symhash[NBUCKET]; //array of length NBUCKET containg sym elements
 
 struct sym {
 	struct sym *next;
