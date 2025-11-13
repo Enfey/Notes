@@ -77,14 +77,14 @@ Widely used IR and naming discipline employed to encode detailed info about **da
 
 In SSA form, every name is defined by exactly one operation. This is achieved by renaming original variables with numerical subscripts e.g., $x_0, x_1...x_n$ such that each new name corresponds to a unique definition - each operation stores its result in a new address(unsure whether this will actually pass over to to symbol table, and to linking and code gen). 
 
-$\phi$ functions preserve the single definition rule when 
+$\phi$ functions preserve the single definition rule.
 
 The primary usefulness of SSA comes from how it simultaneously simplifies and improves the results of a variety of compiler optimisations by simplifying the properties of variables. For example, consider this piece of code:
 
 y := 1
 y := 2
 x := y
-In SSA form, would not have to perform *reaching definition analysi*s to determine whether the first assignment is necessary, immediate in SSA form
+In SSA form, would not have to perform *reaching definition analysi*s to determine whether the first assignment is necessary, immediate in SSA form.
 
 To convert to SSA form, simply a matter of replacing the target of each assignment with a new variable, and replacing each use of a variable with the 'version' of the variable **reaching** that point. 
 
